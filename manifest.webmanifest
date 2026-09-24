@@ -1,0 +1,17 @@
+{
+  "name": "30秒先が見えるトレード",
+  "short_name": "未来トレード",
+  "description": "30秒先の未来が見えたら、トレードで勝てるのか？架空の相場で遊ぶジョーク系トレードゲーム",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0f16",
+  "theme_color": "#0b0f16",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
