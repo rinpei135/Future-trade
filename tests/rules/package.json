@@ -1,0 +1,15 @@
+{
+  "name": "future-trade-rules-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only auth,firestore --project demo-future-trade \"node --test rules.test.mjs && python3 ../ranking_emulator.py\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-future-trade \"node --test rules.test.mjs\"",
+    "test:ranking": "firebase emulators:exec --only auth,firestore --project demo-future-trade \"python3 ../ranking_emulator.py\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.31.0"
+  }
+}
