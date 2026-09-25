@@ -98,7 +98,7 @@ python3 tests/smoke_prod.py  # 本番サイトの確認（読み取りのみ）�
 ```
 
 - `tests/prepare_test.py`：公開ファイルを `.test-build/` にコピーし、テスト用の参照口を追加、`ranking.js` を Firebase を使わないモックに差し替える（本番ランキングを汚さない）
-- `tests/e2e.py`：PC・スマホの総合テスト 45 項目（初回導線、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
+- `tests/e2e.py`：PC・スマホの総合テスト 46 項目（初回導線、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
 - `tests/xss.py`：攻撃文字列 10 種 × 3 か所（挑戦状URL・ニックネーム・ランキング）でスクリプトが実行されないことを確認
 - `tests/rules/rules.test.mjs`：`firestore.rules` の単体テスト 9 項目（Firestore エミュレーター＋`@firebase/rules-unit-testing`）。コレクション名は `ranking.js` の `periodCollection()` をそのまま取り出して使い、ルールとの一致を確認
 - `tests/ranking_emulator.py`：本物の `ranking.js` を Auth・Firestore エミュレーターにつなぎ、タイムアタック → 3期間に登録 → 各タブで自分の行を「検証」✓ まで通しで確認（gstatic の SDK は npm の `firebase` パッケージの同じバージョンのファイルで代用）

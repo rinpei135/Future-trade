@@ -1669,15 +1669,19 @@
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   let rankPeriod = "day";
+  let rankReq = 0;   // タブを素早く切り替えたとき、前のタブの遅れて届いた結果で上書きしないための通し番号
   async function openRanking() {
+    const req = ++rankReq;
     $("rankModal").hidden = false;
     $("rankTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.p === rankPeriod));
     $("rankBody").innerHTML = '<tr><td class="empty-row" colspan="6">読み込み中…</td></tr>';
     try {
       const api = await waitRankingReady();
       const rows = await api.fetchTop(rankPeriod, 20);
+      if (req !== rankReq) return;
       renderRankRows(rows);
     } catch (e) {
+      if (req !== rankReq) return;
       $("rankBody").innerHTML = '<tr><td class="empty-row" colspan="6">読み込みに失敗しました（時間をおいて「更新」をお試しください）</td></tr>';
       console.error(e);
     }

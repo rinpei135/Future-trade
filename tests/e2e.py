@@ -136,6 +136,13 @@ with sync_playwright() as p:
     check("検証：本物は✓、改ざんは✗", v[0].startswith("✓") and v[1].startswith("✗"), " / ".join(v))
     for tab in ("week","all","day"): pg.click(f"#rankTabs button[data-p={tab}]"); pg.wait_for_timeout(150)
     check("ランキング期間タブ", True)
+    # 全期間の読み込みが遅れて届いても、あとから選んだ「今日」の表示を上書きしない
+    pg.evaluate("""() => { const R = window.Ranking; R.__fetch = R.__fetch || R.fetchTop;
+        R.fetchTop = (per) => new Promise(ok => setTimeout(() => ok([{ id: 'x', nickname: per === 'all' ? '全期間の人' : '今日の人', equity: 1100000, ret: 10, trades: 1 }]), per === 'all' ? 700 : 50)); }""")
+    pg.click("#rankTabs button[data-p=all]"); pg.click("#rankTabs button[data-p=day]"); pg.wait_for_timeout(1000)
+    body = pg.inner_text("#rankBody")
+    check("ランキング：タブの素早い切替で前のタブの結果が混ざらない", "今日の人" in body and "全期間の人" not in body, body.replace("\n", " ")[:40])
+    pg.evaluate("() => { window.Ranking.fetchTop = window.Ranking.__fetch; }")
     pg.click("#rankClose")
     # --- 挑戦状を受け取る（別の人） ---
     c2 = b.new_context(viewport={"width":1400,"height":900}); c = c2.new_page(); attach(c, "挑戦者B")
