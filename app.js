@@ -70,6 +70,7 @@
   function fmtYen(n) { return (n < 0 ? "-" : "") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP"); }
   function fmtSYen(n) { return (n > 0 ? "+" : n < 0 ? "-" : "±") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP"); }
   const fmtQty = (k, u) => u.toLocaleString("ja-JP") + INSTRUMENTS[k].unit;
+  const fmtQtyShort = (k, u) => u >= 10000 ? +(u / 10000).toFixed(1) + "万" + INSTRUMENTS[k].unit : fmtQty(k, u);   // スマホの操作バー用
   const dirJ = (d) => (d === "buy" ? "買" : "売");
   function fmtSlip(k, s) {
     return INSTRUMENTS[k].kind === "fx" ? (s * 100).toFixed(1) + "銭" : Math.round(s) + "円";
@@ -638,14 +639,23 @@
     Object.assign(stats, { trades: 0, wins: 0, futureTrades: 0, maxWin: 0, maxLoss: 0 });
     resetHistory(); renderPositions(); updateOrderPanel();
   }
+  // 中断・リセットなど取り消せない操作は、3秒以内にもう一度押したときだけ実行する（誤操作防止）
   let abortArmedUntil = 0;
+  function armed(msg) {
+    if (Date.now() <= abortArmedUntil) { abortArmedUntil = 0; return true; }
+    abortArmedUntil = Date.now() + 3000; toast(msg, "warn"); return false;
+  }
   $("resetBtn").addEventListener("click", () => {
     if (challenge && challenge.mode === "ta") {
       if (challengeOver) { exitChallenge(); return; }
-      if (Date.now() > abortArmedUntil) { abortArmedUntil = Date.now() + 3000; toast("もう一度押すとタイムアタックを中断します", "warn"); return; }
+      if (!armed("もう一度押すとタイムアタックを中断します")) return;
       exitChallenge(); toast("タイムアタックを中断しました", "warn"); return;
     }
-    if (challenge) { startChallenge(challenge); toast("同じ相場で、最初から挑戦し直します", "warn"); return; }
+    if (challenge) {
+      if (!challengeOver && !armed("もう一度押すと、同じ相場で最初から挑戦し直します")) return;
+      startChallenge(challenge); toast("同じ相場で、最初から挑戦し直します", "warn"); return;
+    }
+    if (!armed("もう一度押すと資産を100万円にリセットします（建玉・注文・成績は消えます）")) return;
     resetAccount();
     roundStartM = currentM();   // 挑戦状URLは、ここから先のプレイ区間で作られる
     toast("資産を100万円にリセットしました", "warn");
@@ -687,11 +697,20 @@
   }
 
   // ======================= 上部メニュー =======================
-  const symMenu = $("symMenu"), ctMenu = $("chartTypeMenu"), indMenu = $("indMenu"), toolFlyout = $("toolFlyout");
-  const menus = [symMenu, ctMenu, indMenu, toolFlyout];
+  const symMenu = $("symMenu"), ctMenu = $("chartTypeMenu"), indMenu = $("indMenu"), toolFlyout = $("toolFlyout"), moreMenu = $("moreMenu");
+  const menus = [symMenu, ctMenu, indMenu, toolFlyout, moreMenu];
   function toggleMenu(m, e) { e.stopPropagation(); const open = !m.classList.contains("open"); menus.forEach(x => x.classList.remove("open")); if (open) m.classList.add("open"); }
   document.addEventListener("click", () => menus.forEach(x => x.classList.remove("open")));
   [symMenu, ctMenu, indMenu, toolFlyout].forEach(m => m.addEventListener("click", (e) => e.stopPropagation()));
+  // スマホ用「⋯」メニュー：中身は上部のボタン（スマホでは非表示）をそのまま押す
+  $("moreBtn").addEventListener("click", (e) => {
+    $("moreReset").textContent = $("resetBtn").textContent;
+    $("moreReset").disabled = $("resetBtn").disabled;
+    $("moreSound").textContent = soundOn ? "効果音：ON（タップでOFF）" : "効果音：OFF（タップでON）";
+    toggleMenu(moreMenu, e);
+  });
+  [["moreReset", "resetBtn"], ["moreSound", "soundBtn"], ["moreHelp", "helpBtn"]].forEach(([m, t]) =>
+    $(m).addEventListener("click", () => { moreMenu.classList.remove("open"); $(t).click(); }));
 
   SYM_KEYS.forEach(k => {
     const c = INSTRUMENTS[k];
@@ -744,12 +763,15 @@
   });
 
   function updateFutureButton() {
-    const b = $("futureToggle");
-    b.disabled = futureState === "cooldown";
-    b.classList.toggle("off", futureState !== "active");
-    if (futureState === "ready") b.innerHTML = '<span class="dot"></span>未来視点を使う';
-    else if (futureState === "active") b.innerHTML = '<span class="dot"></span>未来視点 ON（残り' + Math.ceil(futureRemain) + '秒）';
-    else b.innerHTML = '<span class="dot"></span>クールダウン ' + Math.ceil(futureRemain) + '秒';
+    const html = '<span class="dot"></span>' + (futureState === "ready" ? "未来視点を使う"
+      : futureState === "active" ? "未来視点 ON（残り" + Math.ceil(futureRemain) + "秒）"
+      : "クールダウン " + Math.ceil(futureRemain) + "秒");
+    ["futureToggle", "mFuture"].forEach(id => {   // 上部のボタンと、スマホの操作バーのボタン
+      const b = $(id);
+      b.disabled = futureState === "cooldown";
+      b.classList.toggle("off", futureState !== "active");
+      if (b.innerHTML !== html) b.innerHTML = html;
+    });
   }
   function endFutureView() {
     futureState = "cooldown"; futureVisible = false; futureRemain = FUTURE_COOLDOWN_SEC;
@@ -766,7 +788,9 @@
     }
     updateFutureButton();
   }
+  $("mFuture").addEventListener("click", () => $("futureToggle").click());
   $("futureToggle").addEventListener("click", () => {
+    stopCoach();
     if (futureState === "ready") {
       futureState = "active"; futureVisible = true; futureRemain = FUTURE_MAX_SEC;
       sfx("ability");
@@ -1305,7 +1329,14 @@
     if (NG_WORDS.some(w => n.toLowerCase().includes(w.toLowerCase()))) return "その名前は使用できません";
     return null;
   }
+  // 名前を自分で決めるまでは自動の名前（未来人1234 など）で遊べる。ランキング登録のときに初めて決めてもらう
+  const NICK_AUTO_KEY = "futurefx_nickname_auto";
   let nickname = loadNickname();
+  let nickConfirmed = !!nickname;
+  if (!nickname) {
+    try { nickname = window.localStorage.getItem(NICK_AUTO_KEY); } catch (e) {}
+    if (!nickname) { nickname = randomNickname(); try { window.localStorage.setItem(NICK_AUTO_KEY, nickname); } catch (e) {} }
+  }
   let nickResolve = null;
   const nickModal = $("nickModal"), nickInput = $("nickInput"), nickErr = $("nickErr");
   function openNicknameModal(forEdit) {
@@ -1319,7 +1350,7 @@
     const n = sanitizeNickname(nickInput.value);
     const err = validateNickname(n);
     if (err) { nickErr.textContent = err; return; }
-    nickname = n;
+    nickname = n; nickConfirmed = true;
     saveNickname(n);
     nickModal.hidden = true;
     if (nickResolve) { nickResolve(n); nickResolve = null; }
@@ -1331,13 +1362,29 @@
     if (lastRound && !lastRound.submitted) lastRound.nickname = nickname;
     if (!$("shareModal").hidden) openShare();
   }));
-  // 初回起動時：ニックネーム設定 → 遊び方の説明（どちらも1回だけ）
+  // 初回起動時：遊び方の説明 → 「未来視点」ボタンを光らせて最初の一押しを案内（どちらも1回だけ）
   const HELP_KEY = "futurefx_help_seen";
+  function helpSeen() { try { return !!window.localStorage.getItem(HELP_KEY); } catch (e) { return false; } }
   function showHelp() { $("helpModal").hidden = false; }
-  function showHelpIfFirst() { let seen = null; try { seen = window.localStorage.getItem(HELP_KEY); } catch (e) {} if (!seen) showHelp(); }
-  $("helpClose").addEventListener("click", () => { $("helpModal").hidden = true; try { window.localStorage.setItem(HELP_KEY, "1"); } catch (e) {} });
+  $("helpClose").addEventListener("click", () => {
+    const first = !helpSeen();
+    $("helpModal").hidden = true;
+    try { window.localStorage.setItem(HELP_KEY, "1"); } catch (e) {}
+    if (first) startCoach();
+  });
   $("helpBtn").addEventListener("click", showHelp);
-  if (!nickname) openNicknameModal(false).then(showHelpIfFirst); else showHelpIfFirst();
+  if (!helpSeen()) showHelp();
+  let coachTimer = 0;
+  function startCoach() {
+    if (futureState !== "ready") return;
+    ["futureToggle", "mFuture"].forEach(id => $(id).classList.add("coach"));
+    toast("まずは「未来視点を使う」を押してみよう。30秒先の値動きが見えます", "warn");
+    coachTimer = setTimeout(stopCoach, 20000);
+  }
+  function stopCoach() {
+    clearTimeout(coachTimer);
+    ["futureToggle", "mFuture"].forEach(id => $(id).classList.remove("coach"));
+  }
 
   // ======================= 成績シェア =======================
   function rankOf(ret, trades) {
@@ -1606,6 +1653,7 @@
   const PERIOD_J = { all: "全期間", week: "今週", day: "今日" };
   $("resRankBtn").addEventListener("click", async () => {
     if (!lastRound || lastRound.mode !== "ta" || lastRound.submitted) return;
+    if (!nickConfirmed) { await openNicknameModal(false); lastRound.nickname = nickname; }   // 初めての登録で名前を決めてもらう
     const btn = $("resRankBtn"), note = $("resRankNote");
     btn.disabled = true;
     note.textContent = "登録しています…";
@@ -1940,7 +1988,7 @@
     const k = currentSym;
     $("mSellPx").textContent = fmtP(k, bidOf(k));
     $("mBuyPx").textContent = fmtP(k, askOf(k));
-    $("mQtyLabel").textContent = fmtQty(k, order.qty[k] || 0);
+    $("mQtyLabel").textContent = fmtQtyShort(k, order.qty[k] || 0);
     const pl = floatingTotal(), el = $("mPnl");
     el.textContent = fmtSYen(pl);
     el.style.color = pl > 0 ? "var(--buy)" : pl < 0 ? "var(--sell)" : "";

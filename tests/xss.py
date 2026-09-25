@@ -20,7 +20,11 @@ with sync_playwright() as p:
         pg.goto(URL + "#c=" + enc({"v":3,"s":12345,"a":0,"b":300000,"n":pl,"e":pl,"t":pl})); pg.wait_for_timeout(300)
         r1 = pg.evaluate(CHK)
         # 2) ニックネームに仕込む（入力とlocalStorage直書きの両方）
-        pg.fill("#nickInput", pl[:40]); pg.click("#nickConfirm"); pg.wait_for_timeout(100)
+        if pg.is_visible("#helpModal"): pg.click("#helpClose")
+        if pg.is_visible("#chalModal"): pg.click("#chalDecline")
+        pg.click("#shareBtn"); pg.click("#rcPlayerEdit"); pg.fill("#nickInput", pl[:40]); pg.click("#nickConfirm"); pg.wait_for_timeout(100)
+        if pg.is_visible("#nickModal"): pg.fill("#nickInput", "xss"); pg.click("#nickConfirm")   # 空になる攻撃文字列は受け付けないので、別の名前で閉じる
+        pg.click("#shareClose")
         pg.evaluate("v => localStorage.setItem('futurefx_nickname', v)", pl)
         pg.goto(URL); pg.wait_for_timeout(300)
         if pg.is_visible("#helpModal"): pg.click("#helpClose")

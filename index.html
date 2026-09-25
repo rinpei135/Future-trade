@@ -188,9 +188,6 @@
   .ad-label { position: absolute; top: 4px; right: 6px; font-size: 0.58rem; color: var(--text-dim); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; background: var(--panel); }
   .ad-banner { margin: 10px 12px 0; min-height: 90px; display: flex; align-items: center; justify-content: center; }
   .ad-rect { min-height: 250px; display: flex; align-items: center; justify-content: center; }
-  .ad-house { text-align: center; padding: 14px 18px; font-size: 0.78rem; color: var(--text-mid); line-height: 1.6; }
-  .ad-house b { color: var(--text); font-size: 0.92rem; display: block; margin-bottom: 4px; }
-  .ad-house small { color: var(--text-dim); font-size: 0.64rem; display: block; margin-top: 6px; }
 
   /* ---------- sidebar ---------- */
   .side-col {
@@ -318,14 +315,25 @@
   .ta-result span { font-weight: 700; font-size: 0.9rem; }
   .ta-sub { font-size: 0.7rem; color: var(--text-dim); margin-top: 6px; }
   .mbar { display: none; }
+  .mob-only { display: none; }
+  .dd-menu.dd-right { left: auto; right: 0; min-width: 170px; }
+  /* 広告ユニットを入れるまでは広告枠を出さない */
+  .ad-slot:not(.ad-live) { display: none !important; }
+  /* 初回だけ「未来視点」ボタンを光らせて、最初に押すボタンを案内する */
+  @keyframes coachPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(240,180,41,0.75); } 50% { box-shadow: 0 0 0 9px rgba(240,180,41,0); } }
+  .coach { animation: coachPulse 1.2s ease-in-out infinite; border-color: var(--future) !important; color: var(--future) !important; }
+  .coach .dot { background: var(--future) !important; }
   @media (max-width: 980px) {
-    .desk-only, .lbl, .tb-spacer { display: none !important; }
+    .desk-only, .lbl, .tb-spacer, .mob-hide { display: none !important; }
+    .mob-only { display: block; }
+    .ad-banner { display: none !important; }
+    .ad-rect { margin: 16px 0; }
     .topbar { gap: 6px; padding: 6px 8px; }
     .tb-btn, .ta-btn, .share-btn { padding: 6px 8px; font-size: 0.72rem; }
     .tf-pill { padding: 4px 7px; font-size: 0.7rem; }
   }
   @media (max-width: 980px) {
-    body { padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px)); }
+    body { padding-bottom: calc(116px + env(safe-area-inset-bottom, 0px)); }
     .mbar {
       display: grid; grid-template-columns: 1fr 0.9fr 1fr 0.8fr; gap: 6px;
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
@@ -340,7 +348,15 @@
     .mbar small { font-size: 0.56rem; font-weight: 600; color: var(--text-dim); }
     .mbar .mb-sell { background: var(--sell-dim); color: var(--sell); border-color: var(--sell); }
     .mbar .mb-buy { background: var(--buy-dim); color: var(--buy); border-color: var(--buy); }
-    .toast-wrap { left: 12px; right: 12px; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
+    .mbar .mb-future {
+      grid-column: 1 / -1; flex-direction: row; justify-content: center; gap: 7px; padding: 8px 4px; font-size: 0.82rem;
+      border-color: var(--future); background: var(--future-glow); color: var(--future);
+    }
+    .mbar .mb-future .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--future); }
+    .mbar .mb-future.off { border-color: var(--border); background: var(--panel-2); color: var(--text-mid); }
+    .mbar .mb-future.off .dot { background: var(--text-dim); }
+    .mbar .mb-future:disabled { opacity: 0.55; }
+    .toast-wrap { left: 12px; right: 12px; bottom: calc(128px + env(safe-area-inset-bottom, 0px)); }
     .toast { min-width: 0; max-width: none; }
   }
   .rank-submit {
@@ -415,7 +431,7 @@
     <button class="tb-btn sym" id="symBtn"><span class="mono" id="symBtnLabel">CRN/JPY</span><span class="chev">▾</span></button>
     <div class="dd-menu" id="symMenu"></div>
   </div>
-  <button class="future-toggle" id="futureToggle"><span class="dot"></span>未来視点を使う</button>
+  <button class="future-toggle mob-hide" id="futureToggle"><span class="dot"></span>未来視点を使う</button>
   <span class="round-badge" id="roundBadge">プレイ時間 00:00</span>
   <div class="tf-pills" id="tfPills"></div>
   <div class="menu-wrap desk-only">
@@ -435,9 +451,18 @@
   <button class="ta-btn" id="taBtn">⏱ 5分<span class="lbl">タイムアタック</span></button>
   <button class="tb-btn" id="rankBtn">🏆<span class="lbl"> ランキング</span></button>
   <button class="share-btn" id="shareBtn"><svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg><span><span class="lbl">成績を</span>シェア</span></button>
-  <button class="tb-btn" id="resetBtn">資産をリセット</button>
-  <button class="tb-btn help-btn" id="soundBtn" title="効果音">🔊</button>
-  <button class="tb-btn help-btn" id="helpBtn" title="遊び方">？</button>
+  <button class="tb-btn mob-hide" id="resetBtn">資産をリセット</button>
+  <button class="tb-btn help-btn mob-hide" id="soundBtn" title="効果音">🔊</button>
+  <button class="tb-btn help-btn mob-hide" id="helpBtn" title="遊び方">？</button>
+  <!-- スマホ用：上の3つのボタンをまとめたメニュー（上部を2段に収めるため） -->
+  <div class="menu-wrap mob-only">
+    <button class="tb-btn help-btn" id="moreBtn" title="その他のメニュー" aria-label="その他のメニュー">⋯</button>
+    <div class="dd-menu dd-right" id="moreMenu">
+      <button class="dd-item" id="moreReset">資産をリセット</button>
+      <button class="dd-item" id="moreSound">効果音</button>
+      <button class="dd-item" id="moreHelp">遊び方</button>
+    </div>
+  </div>
 </div>
 
 <div class="body-grid">
@@ -475,12 +500,11 @@
     </div>
     <div class="legend-row" id="legendRow"></div>
 
-    <!-- 広告枠（横長バナー）: 自前のサイトで公開する場合は ad-inner の中身を広告タグに置き換える -->
+    <!-- 広告枠（横長バナー・PCのみ）: AdSense の広告ユニットを ad-inner に入れ、class に ad-live を付けると表示される。
+         スマホでは売買の操作バーに近くなり誤タップを招くため表示しない -->
     <div class="ad-slot ad-banner" data-ad-slot="chart-bottom-banner">
       <span class="ad-label">広告</span>
-      <div class="ad-inner">
-        <div class="ad-house"><b>未来が見えなかった日も、ここに広告が入ります。</b>この枠は広告枠のサンプルです（728×90 相当）。<small>広告のお問い合わせは運営者まで</small></div>
-      </div>
+      <div class="ad-inner"></div>
     </div>
 
     <div class="strap">
@@ -552,12 +576,10 @@
       <span id="newsText">未来が見えるトレーダーが1名、この端末に出現した模様。</span>
     </div>
 
-    <!-- 広告枠（レクタングル）: 自前のサイトで公開する場合は ad-inner の中身を広告タグに置き換える -->
+    <!-- 広告枠（レクタングル）: AdSense の広告ユニットを ad-inner に入れ、class に ad-live を付けると表示される -->
     <div class="ad-slot ad-rect" data-ad-slot="sidebar-rect">
       <span class="ad-label">広告</span>
-      <div class="ad-inner">
-        <div class="ad-house"><b>ここに広告が入ります</b>この枠は広告枠のサンプルです（300×250 相当）。<small>広告のお問い合わせは運営者まで</small></div>
-      </div>
+      <div class="ad-inner"></div>
     </div>
 
     <div class="card">
@@ -581,11 +603,11 @@
 
 <div class="modal" id="nickModal" hidden>
   <div class="modal-box narrow">
-    <h3 class="nick-h">ニックネームを設定</h3>
-    <p class="nick-note">ランキングに登録するときの表示名です。あとから「成績をシェア」画面でいつでも変更できます。</p>
+    <h3 class="nick-h">ニックネームを決める</h3>
+    <p class="nick-note">ランキングや挑戦状に表示される名前です。あとから「成績をシェア」画面でいつでも変更できます。</p>
     <input class="inp mono nick-input" id="nickInput" type="text" maxlength="40" placeholder="例：未来人1234">
     <div class="nick-err" id="nickErr"></div>
-    <button class="go-btn buy" id="nickConfirm">この名前で始める</button>
+    <button class="go-btn buy" id="nickConfirm">この名前にする</button>
   </div>
 </div>
 
@@ -693,8 +715,9 @@
 </div>
 
 <div class="mbar" id="mbar">
+  <button class="mb-future off" id="mFuture"><span class="dot"></span>未来視点を使う</button>
   <button class="mb-sell" id="mSell">売り<span class="mono" id="mSellPx">---</span></button>
-  <button class="mb-mid" id="mQty"><span class="mono" id="mQtyLabel">---</span><small>数量（タップで変更）</small></button>
+  <button class="mb-mid" id="mQty"><span class="mono" id="mQtyLabel">---</span><small>タップで変更</small></button>
   <button class="mb-buy" id="mBuy">買い<span class="mono" id="mBuyPx">---</span></button>
   <button class="mb-close" id="mClose">決済<small class="mono" id="mPnl">±¥0</small></button>
 </div>

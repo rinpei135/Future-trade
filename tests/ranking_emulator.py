@@ -73,7 +73,7 @@ try:
         pg.on("pageerror", lambda e: errs.append(f"pageerror: {e}"))
         pg.on("console", lambda m: errs.append(f"console.error: {m.text}") if m.type == "error" else None)
         pg.goto(f"http://127.0.0.1:{PORT}/index.html"); pg.wait_for_timeout(800)
-        pg.fill("#nickInput", "エミュレーター"); pg.click("#nickConfirm"); pg.click("#helpClose")
+        pg.click("#helpClose")
         pg.wait_for_function("() => window.Ranking && window.Ranking.ready", timeout=15000)
         check("ranking.js（本物）の初期化", True)
         pg.click("#taBtn"); pg.click("#taStart"); pg.wait_for_timeout(300)
@@ -81,7 +81,8 @@ try:
             pg.click("#qBuy" if i % 2 == 0 else "#qSell"); pg.wait_for_timeout(900); pg.click("#closeAllBtn"); pg.wait_for_timeout(300)
         pg.evaluate(FF(301000)); pg.wait_for_timeout(1300)
         check("タイムアタック終了", pg.is_visible("#chalResultModal"))
-        pg.click("#resRankBtn")
+        pg.click("#resRankBtn"); pg.wait_for_timeout(300)
+        pg.fill("#nickInput", "エミュレーター"); pg.click("#nickConfirm")   # 初めての登録では名前を決める
         pg.wait_for_function("() => !document.getElementById('resRankNote').innerText.includes('登録しています')", timeout=20000)
         note = pg.inner_text("#resRankNote")
         check("登録：今日・今週・全期間すべて成功", note == "今日：登録 / 今週：登録 / 全期間：登録", note)

@@ -69,7 +69,8 @@ with sync_playwright() as p:
             pg.click("#qBuy" if i % 2 == 0 else "#qSell"); pg.wait_for_timeout(1500); pg.click("#closeAllBtn"); pg.wait_for_timeout(500)
         pg.evaluate(FF(301000)); pg.wait_for_timeout(2000)
         check("5分で自動終了", pg.is_visible("#chalResultModal"))
-        pg.click("#resRankBtn")
+        pg.click("#resRankBtn"); pg.wait_for_timeout(300)
+        if pg.is_visible("#nickModal"): pg.fill("#nickInput", NICK); pg.click("#nickConfirm")   # 初めての登録では名前を決める
         pg.wait_for_function("() => !document.getElementById('resRankNote').innerText.includes('登録しています')", timeout=20000)
         note = pg.inner_text("#resRankNote")
         check("本番ランキングに登録（今日・今週・全期間）", all(k in note for k in ("今日：", "今週：", "全期間：")) and "失敗" not in note and "できません" not in note, note)
