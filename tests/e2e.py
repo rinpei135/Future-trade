@@ -180,7 +180,12 @@ with sync_playwright() as p:
     d.screenshot(path="tests/out/dark.png")
     check("ダークモード表示", True)
     pp = ctx.new_page(); attach(pp, "privacy"); pp.goto(URL_BASE + "/privacy.html"); pp.wait_for_timeout(200)
-    check("プライバシーポリシー表示", "rinpei135" in pp.inner_text("body"))
+    check("プライバシーポリシー表示", "rinpei135" in pp.inner_text("body") and "Google AdSense" in pp.inner_text("body"))
+    # 広告（AdSense）：テスト用ビルドからは除いているので、公開用の index.html を直接確認する
+    src = open("index.html", encoding="utf-8").read()
+    csp = src.split('http-equiv="Content-Security-Policy" content="')[1].split('"')[0]
+    check("AdSense のコードと CSP の許可", "adsbygoogle.js?client=ca-pub-8966952880320749" in src
+          and all(d in csp.split("script-src")[1].split(";")[0] for d in ("https://pagead2.googlesyndication.com", "https://*.adtrafficquality.google")))
     b.close()
 print("\n".join(results))
 print("\nNG件数:", sum(1 for r in results if r.startswith("NG")), "/", len(results))

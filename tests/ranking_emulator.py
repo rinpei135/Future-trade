@@ -65,6 +65,8 @@ try:
         b = p.chromium.launch()
         ctx = b.new_context(viewport={"width": 1400, "height": 900})
         ctx.route(re.compile(r"^https://www\.gstatic\.com/firebasejs/"), serve_sdk)
+        # 本物の広告は読み込まない（自動操作での広告表示は AdSense の無効なトラフィック扱いになりうるため）
+        ctx.route(re.compile(r"^https://([a-z0-9-]+\.)*(googlesyndication\.com|doubleclick\.net|adtrafficquality\.google)/|^https://fundingchoicesmessages\.google\.com/"), lambda rt: rt.fulfill(status=200, body="", headers={"Content-Type": "text/javascript"}))
         ctx.route(re.compile(r"^https://fonts\.(googleapis|gstatic)\.com/"), lambda rt: rt.fulfill(status=200, body="", headers={"Content-Type": "text/css"}))
         pg = ctx.new_page()
         pg.add_init_script("document.addEventListener('securitypolicyviolation', e => console.error('CSP違反: ' + e.violatedDirective + ' ' + e.blockedURI))")
