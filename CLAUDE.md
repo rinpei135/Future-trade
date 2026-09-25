@@ -56,7 +56,7 @@ claude.ai のチャットで開発してきた Web ゲームの引き継ぎ資�
     ルールを変えたら `tests/rules` のテスト（エミュレーター）で必ず確認する。
 - **成績の検証**：登録時にシード値と取引記録（`log`：`銘柄,売買,数量,建て時刻,建値,決済時刻,決済値,スワップ;…`）を保存。
   ランキングの「検証」ボタンで `verifyRound()` が相場を作り直し、各約定価格がその時点の相場と一致するか（許容差 スプレッド×4.5＋1ティック、時刻±800ms）、損益の合計が最終資産と合うかを判定する。
-- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`、`connect-src 'self' https://*.googleapis.com …`。
+- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`、`connect-src 'self' https://*.googleapis.com …`、`img-src` に `https://www.google.com`（Firestore が通信失敗時に接続確認で `cleardot.gif` を読むため）。
   外部スクリプトを増やす場合や App Check（reCAPTCHA）を入れる場合は CSP も確認すること（reCAPTCHA 用のドメインは許可済み）。
 - **Firebase SDK**：`https://www.gstatic.com/firebasejs/12.19.0/` から読み込む（app / auth / firestore / app-check は**必ず同じバージョン**にそろえる。混在すると Firestore が使えなくなる）。
 - **外部データの表示**：ランキング・挑戦状URL・ニックネームは他人が書き換えられる値。表示前に必ずエスケープ（`escapeHtml`）または `textContent` を使い、数値は `Number()` で変換してから使う。
