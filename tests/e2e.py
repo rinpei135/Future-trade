@@ -127,6 +127,13 @@ with sync_playwright() as p:
     with pg.expect_download() as dl: pg.click("#shareImg")
     dl.value.save_as("tests/out/card.png")
     check("成績カード画像の保存", True, dl.value.suggested_filename)
+    # 共有画面の「変更」で名前を変えたら、カード・投稿文・挑戦状URL・Xのリンクにすぐ反映される
+    pg.click("#rcPlayerEdit"); pg.fill("#nickInput", "改名テスト"); pg.click("#nickConfirm"); pg.wait_for_timeout(200)
+    url2 = pg.input_value("#chalUrl")
+    n2 = json.loads(base64.urlsafe_b64decode(url2.split("#c=")[1] + "==").decode("utf-8")).get("n")
+    ok = (pg.is_visible("#shareModal") and pg.inner_text("#rcPlayer") == "改名テスト" and "改名テスト" in pg.input_value("#shareText")
+          and n2 == "改名テスト" and urllib.parse.quote("改名テスト") in pg.get_attribute("#shareX", "href"))
+    check("共有画面で名前を変更するとすぐ反映（カード・投稿文・挑戦状URL・Xのリンク）", ok, f"カード={pg.inner_text('#rcPlayer')} URL内={n2}")
     pg.click("#shareClose")
     # 検証（本物・改ざん）
     pg.evaluate("r => { window.__rows = [{id:'me',nickname:'本物',equity:r.eq,ret:0,trades:r.n,seed:r.seed,log:r.log},{id:'x',nickname:'改ざん',equity:r.eq+300000,ret:30,trades:r.n,seed:r.seed,log:r.log}]; }", lr)

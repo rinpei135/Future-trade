@@ -1326,7 +1326,11 @@
   }
   $("nickConfirm").addEventListener("click", confirmNickname);
   nickInput.addEventListener("keydown", (e) => { if (e.key === "Enter") confirmNickname(); });
-  $("rcPlayerEdit").addEventListener("click", () => openNicknameModal(true));
+  // 共有画面から名前を変えたら、まだランキングに登録していない成績にも反映し、共有画面（カード・投稿文・挑戦状URL・Xのリンク）を作り直す
+  $("rcPlayerEdit").addEventListener("click", () => openNicknameModal(true).then(() => {
+    if (lastRound && !lastRound.submitted) lastRound.nickname = nickname;
+    if (!$("shareModal").hidden) openShare();
+  }));
   // 初回起動時：ニックネーム設定 → 遊び方の説明（どちらも1回だけ）
   const HELP_KEY = "futurefx_help_seen";
   function showHelp() { $("helpModal").hidden = false; }
