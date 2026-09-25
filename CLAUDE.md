@@ -56,7 +56,8 @@ claude.ai のチャットで開発してきた Web ゲームの引き継ぎ資�
     ルールを変えたら `tests/rules` のテスト（エミュレーター）で必ず確認する。
 - **成績の検証**：登録時にシード値と取引記録（`log`：`銘柄,売買,数量,建て時刻,建値,決済時刻,決済値,スワップ;…`）を保存。
   ランキングの「検証」ボタンで `verifyRound()` が相場を作り直し、各約定価格がその時点の相場と一致するか（許容差 スプレッド×4.5＋1ティック、時刻±800ms）、損益の合計が最終資産と合うかを判定する。
-- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`、`connect-src 'self' https://*.googleapis.com …`、`img-src` に `https://www.google.com`（Firestore が通信失敗時に接続確認で `cleardot.gif` を読むため）。
+- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`＋広告用ドメイン、`connect-src 'self' https://*.googleapis.com https://*.google.com`＋広告用ドメイン、`img-src` は `https:` 全体（広告画像のため。Firestore の接続確認用 `cleardot.gif` もこれで許可される）。
+  広告用ドメインは `pagead2.googlesyndication.com`・`*.googlesyndication.com`・`*.doubleclick.net`・`*.adtrafficquality.google`・`fundingchoicesmessages.google.com`（script / connect / frame に許可）。
   外部スクリプトを増やす場合や App Check（reCAPTCHA）を入れる場合は CSP も確認すること（reCAPTCHA 用のドメインは許可済み）。
 - **Firebase SDK**：`https://www.gstatic.com/firebasejs/12.19.0/` から読み込む（app / auth / firestore / app-check は**必ず同じバージョン**にそろえる。混在すると Firestore が使えなくなる）。
 - **外部データの表示**：ランキング・挑戦状URL・ニックネームは他人が書き換えられる値。表示前に必ずエスケープ（`escapeHtml`）または `textContent` を使い、数値は `Number()` で変換してから使う。
@@ -97,8 +98,8 @@ bash tests/run_tests.sh      # リポジトリ直下で実行
 python3 tests/smoke_prod.py  # 本番サイトの確認（読み取りのみ）。--write で本番ランキングに書き込む通し確認
 ```
 
-- `tests/prepare_test.py`：公開ファイルを `.test-build/` にコピーし、テスト用の参照口を追加、`ranking.js` を Firebase を使わないモックに差し替える（本番ランキングを汚さない）
-- `tests/e2e.py`：PC・スマホの総合テスト 46 項目（初回導線、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
+- `tests/prepare_test.py`：公開ファイルを `.test-build/` にコピーし、テスト用の参照口を追加、`ranking.js` を Firebase を使わないモックに差し替える（本番ランキングを汚さない）。本物の広告（AdSense）のコードも取り除く。`smoke_prod.py`・`ranking_emulator.py` も広告の通信を遮断している（自動操作での広告表示は無効なトラフィック扱いになりうるため）
+- `tests/e2e.py`：PC・スマホの総合テスト 47 項目（初回導線、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
 - `tests/xss.py`：攻撃文字列 10 種 × 3 か所（挑戦状URL・ニックネーム・ランキング）でスクリプトが実行されないことを確認
 - `tests/rules/rules.test.mjs`：`firestore.rules` の単体テスト 9 項目（Firestore エミュレーター＋`@firebase/rules-unit-testing`）。コレクション名は `ranking.js` の `periodCollection()` をそのまま取り出して使い、ルールとの一致を確認
 - `tests/ranking_emulator.py`：本物の `ranking.js` を Auth・Firestore エミュレーターにつなぎ、タイムアタック → 3期間に登録 → 各タブで自分の行を「検証」✓ まで通しで確認（gstatic の SDK は npm の `firebase` パッケージの同じバージョンのファイルで代用）
@@ -129,7 +130,12 @@ python3 tests/smoke_prod.py  # 本番サイトの確認（読み取りのみ）�
 5分タイムアタック、匿名ログイン＋1人1件、成績の検証、期間別ランキング、効果音・振動、PWA、OGP、プライバシーポリシー、
 軍資金100万円・上限1,000万円への変更、GitHub Pages での公開、の順で開発した。
 
-広告（AdSense）は独自ドメインと審査が必要なため保留中（`index.html` に広告枠のサンプルだけ配置済み）。
+## 10. 広告（Google AdSense）
+
+- サイト運営者ID：`ca-pub-8966952880320749`（AdMob と同じ番号）。`index.html` の `<head>` に AdSense のコードを入れている
+- AdSense のサイトは `rinpei135.github.io`（ドメイン単位）。`ads.txt` とトップページは別リポジトリ `rinpei135/rinpei135.github.io` にある（Cafelyze と共用。`app-ads.txt` は AdMob 用なので消さない）
+- 自動広告は売買ボタンの近くに広告が出て誤クリック（規約違反）につながるおそれがあるため、**審査通過後は自動広告を使わず、`index.html` の広告枠（`data-ad-slot` の2か所）に広告ユニットを手動で置く**方針
+- 広告に関するプライバシーポリシーの記載は `privacy.html` の「広告について」
 
 ## 9. Claude Code での作業ログ
 
