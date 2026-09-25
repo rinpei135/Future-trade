@@ -26,7 +26,8 @@ def attach(pg, tag):
     pg.add_init_script("document.addEventListener('securitypolicyviolation', e => console.error('CSP違反: ' + e.violatedDirective + ' ' + e.blockedURI))")
     pg.on("pageerror", lambda e: errs.append(f"[{tag}] pageerror: {e}"))
     pg.on("console", lambda m: errs.append(f"[{tag}] console.{m.type}: {m.text}") if m.type == "error" else None)
-    pg.on("requestfailed", lambda r: errs.append(f"[{tag}] 読み込み失敗: {r.url} {r.failure}"))
+    # ERR_ABORTED は画面を閉じたときなどに途中の通信が打ち切られただけなので対象外
+    pg.on("requestfailed", lambda r: errs.append(f"[{tag}] 読み込み失敗: {r.url} {r.failure}") if "ERR_ABORTED" not in (r.failure or "") else None)
 
 def first_visit(pg):
     pg.goto(URL); pg.wait_for_timeout(1500)

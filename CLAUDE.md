@@ -56,7 +56,7 @@ claude.ai のチャットで開発してきた Web ゲームの引き継ぎ資�
     ルールを変えたら `tests/rules` のテスト（エミュレーター）で必ず確認する。
 - **成績の検証**：登録時にシード値と取引記録（`log`：`銘柄,売買,数量,建て時刻,建値,決済時刻,決済値,スワップ;…`）を保存。
   ランキングの「検証」ボタンで `verifyRound()` が相場を作り直し、各約定価格がその時点の相場と一致するか（許容差 スプレッド×4.5＋1ティック、時刻±800ms）、損益の合計が最終資産と合うかを判定する。
-- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`、`connect-src 'self' https://*.googleapis.com …`。
+- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`、`connect-src 'self' https://*.googleapis.com …`、`img-src` に `https://www.google.com`（Firestore が通信失敗時に接続確認で `cleardot.gif` を読むため）。
   外部スクリプトを増やす場合や App Check（reCAPTCHA）を入れる場合は CSP も確認すること（reCAPTCHA 用のドメインは許可済み）。
 - **Firebase SDK**：`https://www.gstatic.com/firebasejs/12.19.0/` から読み込む（app / auth / firestore / app-check は**必ず同じバージョン**にそろえる。混在すると Firestore が使えなくなる）。
 - **外部データの表示**：ランキング・挑戦状URL・ニックネームは他人が書き換えられる値。表示前に必ずエスケープ（`escapeHtml`）または `textContent` を使い、数値は `Number()` で変換してから使う。
@@ -98,7 +98,7 @@ python3 tests/smoke_prod.py  # 本番サイトの確認（読み取りのみ）�
 ```
 
 - `tests/prepare_test.py`：公開ファイルを `.test-build/` にコピーし、テスト用の参照口を追加、`ranking.js` を Firebase を使わないモックに差し替える（本番ランキングを汚さない）
-- `tests/e2e.py`：PC・スマホの総合テスト 45 項目（初回導線、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
+- `tests/e2e.py`：PC・スマホの総合テスト 46 項目（初回導線、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
 - `tests/xss.py`：攻撃文字列 10 種 × 3 か所（挑戦状URL・ニックネーム・ランキング）でスクリプトが実行されないことを確認
 - `tests/rules/rules.test.mjs`：`firestore.rules` の単体テスト 9 項目（Firestore エミュレーター＋`@firebase/rules-unit-testing`）。コレクション名は `ranking.js` の `periodCollection()` をそのまま取り出して使い、ルールとの一致を確認
 - `tests/ranking_emulator.py`：本物の `ranking.js` を Auth・Firestore エミュレーターにつなぎ、タイムアタック → 3期間に登録 → 各タブで自分の行を「検証」✓ まで通しで確認（gstatic の SDK は npm の `firebase` パッケージの同じバージョンのファイルで代用）
