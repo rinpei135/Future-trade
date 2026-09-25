@@ -1,0 +1,6 @@
+.test-build/
+tests/out/
+__pycache__/
+.emu-build/
+node_modules/
+*-debug.log

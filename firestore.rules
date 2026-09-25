@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function jst() { return request.time + duration.value(9, 'h'); }
+    function dayCol() { return 'ta5d_' + string(jst().year()) + '_' + string(jst().month()) + '_' + string(jst().day()); }
+    // math.floor() は小数（2960.0）を返し、string() すると 'ta5w_2960.0' になってクライアントと一致しないため int() で整数にする
+    function weekCol() { return 'ta5w_' + string(int(math.floor((request.time.toMillis() + 32400000 + 259200000) / 604800000))); }
+    function validScore() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['nickname','equity','ret','trades','winRate','futureRate','rank','seed','log','ts'])
+        && d.keys().hasOnly(['nickname','equity','ret','trades','winRate','futureRate','rank','seed','log','ts'])
+        && d.nickname is string && d.nickname.size() > 0 && d.nickname.size() <= 20
+        && d.equity is int && d.equity >= 0 && d.equity <= 10000000
+        && d.ret is number && d.ret >= -100 && d.ret <= 1000
+        && math.abs(d.ret - (d.equity - 1000000) / 10000.0) < 0.02
+        && d.trades is int && d.trades >= 0 && d.trades <= 10000
+        && d.winRate is int && d.winRate >= 0 && d.winRate <= 100
+        && d.futureRate is int && d.futureRate >= 0 && d.futureRate <= 100
+        && d.rank is string && d.rank.size() <= 40
+        && d.seed is int && d.seed >= 0 && d.seed <= 4294967295
+        && d.log is string && d.log.size() <= 20000
+        && d.ts == request.time;
+    }
+    match /{col}/{uid} {
+      allow read: if col == 'ta5' || col.matches('ta5d_[0-9]+_[0-9]+_[0-9]+') || col.matches('ta5w_[0-9]+');
+      allow create: if request.auth != null && request.auth.uid == uid
+        && (col == 'ta5' || col == dayCol() || col == weekCol()) && validScore();
+      allow update: if request.auth != null && request.auth.uid == uid
+        && (col == 'ta5' || col == dayCol() || col == weekCol()) && validScore()
+        && request.resource.data.equity > resource.data.equity
+        && request.time > resource.data.ts + duration.value(60, 's');
+      allow delete: if false;
+    }
+  }
+}
