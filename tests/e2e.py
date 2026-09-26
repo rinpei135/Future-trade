@@ -18,9 +18,11 @@ with sync_playwright() as p:
     pg = ctx.new_page(); attach(pg, "PC")
     pg.goto(URL); pg.wait_for_timeout(700)
     # --- 初回導線 ---
-    check("初回：ニックネーム画面", pg.is_visible("#nickModal"))
-    pg.fill("#nickInput", "E2Eテスト"); pg.click("#nickConfirm")
-    check("初回：遊び方の説明", pg.is_visible("#helpModal")); pg.click("#helpClose")
+    check("初回：名前は聞かずに遊び方の説明", pg.is_hidden("#nickModal") and pg.is_visible("#helpModal"))
+    auto = pg.evaluate("() => localStorage.getItem('futurefx_nickname_auto') || ''")
+    check("初回：自動の名前で始まる", auto.startswith("未来人"), auto)
+    pg.click("#helpClose"); pg.wait_for_timeout(200)
+    check("初回：未来視点ボタンを光らせて案内", "coach" in (pg.get_attribute("#futureToggle", "class") or ""))
     pg.reload(); pg.wait_for_timeout(500)
     check("再訪時はニックネーム・説明を出さない", pg.is_hidden("#nickModal") and pg.is_hidden("#helpModal"))
     # --- フリープレイの取引 ---
@@ -54,6 +56,11 @@ with sync_playwright() as p:
         pg.mouse.down(); pg.mouse.move(box["x"]+300, found-60, steps=6); pg.mouse.up(); pg.wait_for_timeout(300)
     check("建玉ラインのドラッグで利確設定", found is not None and "利" in pg.inner_text("#openBody"))
     pg.click("#closeAllBtn"); pg.wait_for_timeout(200)
+    # フリープレイの「資産をリセット」は2回押しで確定
+    pg.click("#qBuy"); pg.wait_for_timeout(300); pg.click("#resetBtn"); pg.wait_for_timeout(200)
+    once = pg.locator("#openBody tr").count()
+    pg.click("#resetBtn"); pg.wait_for_timeout(300)
+    check("資産のリセットは2回押しが必要", once == 1 and "建玉はありません" in pg.inner_text("#openBody"))
     # --- チャート操作 ---
     pg.mouse.move(box["x"]+500, box["y"]+120); pg.mouse.wheel(0, 500); pg.wait_for_timeout(200)
     pg.mouse.down(); pg.mouse.move(box["x"]+800, box["y"]+120, steps=5); pg.mouse.up(); pg.wait_for_timeout(300)
@@ -78,7 +85,7 @@ with sync_playwright() as p:
     check("描画ツール（トレンドライン・水平線・垂直線・消去）", True)
     # --- 未来視点 ---
     pg.click("#futureToggle"); pg.wait_for_timeout(300)
-    check("未来視点ON（残り表示）", "残り" in pg.inner_text("#futureToggle"))
+    check("未来視点ON（残り表示）", "残り" in pg.inner_text("#futureToggle") and "coach" not in (pg.get_attribute("#futureToggle", "class") or ""))
     pg.click("#futureToggle"); pg.wait_for_timeout(300)
     t1 = pg.inner_text("#futureToggle")
     check("OFFで60秒クールダウン", "クールダウン" in t1 and ("60" in t1 or "59" in t1), t1)
@@ -118,7 +125,9 @@ with sync_playwright() as p:
     check("振り返りチャート描画", ink > 500, f"{ink}px")
     lr = pg.evaluate("() => { const r = window.__lr(); return { eq: Math.round(r.equity), seed: r.seed, log: r.log, n: r.tradeList.length }; }")
     check("取引記録の作成", lr["n"] == 4 and len(lr["log"]) > 0, f"{lr['n']}件")
-    pg.click("#resRankBtn"); pg.wait_for_timeout(400)
+    pg.click("#resRankBtn"); pg.wait_for_timeout(200)
+    check("初めてのランキング登録で名前を決める", pg.is_visible("#nickModal") and pg.evaluate("() => window.__sub.length") == 0)
+    pg.fill("#nickInput", "E2Eテスト"); pg.click("#nickConfirm"); pg.wait_for_timeout(400)
     sub = pg.evaluate("() => window.__sub[0]")
     check("ランキング登録データ", sub and sub["seed"] == lr["seed"] and sub["log"] == lr["log"] and sub["nickname"] == "E2Eテスト", pg.inner_text("#resRankNote"))
     pg.click("#chalShareBtn"); pg.wait_for_timeout(300)
@@ -154,8 +163,7 @@ with sync_playwright() as p:
     # --- 挑戦状を受け取る（別の人） ---
     c2 = b.new_context(viewport={"width":1400,"height":900}); c = c2.new_page(); attach(c, "挑戦者B")
     c.goto(URL + "#c=" + url.split("#c=")[1]); c.wait_for_timeout(600)
-    check("挑戦状：初回ニックネーム＋挑戦画面", c.is_visible("#nickModal") and c.is_visible("#chalModal"))
-    c.click("#nickConfirm"); c.wait_for_timeout(200)
+    check("挑戦状：初回は名前を聞かずに挑戦画面", c.is_hidden("#nickModal") and c.is_visible("#chalModal"))
     top = c.evaluate("() => { const b = document.getElementById('helpClose').getBoundingClientRect(); const el = document.elementFromPoint(b.x + b.width/2, b.y + b.height/2); return el && el.id; }")
     check("挑戦状：初回は遊び方の説明が挑戦画面より手前", top == "helpClose", str(top))
     c.click("#helpClose"); c.click("#chalAccept"); c.wait_for_timeout(1200)
@@ -170,12 +178,23 @@ with sync_playwright() as p:
     # --- スマホ ---
     mctx = b.new_context(viewport={"width":390,"height":844}, is_mobile=True, has_touch=True, device_scale_factor=2)
     m = mctx.new_page(); attach(m, "スマホ")
-    m.goto(URL); m.wait_for_timeout(600); m.click("#nickConfirm"); m.click("#helpClose")
+    m.goto(URL); m.wait_for_timeout(600); m.click("#helpClose")
     check("スマホ：操作バー表示", m.is_visible("#mbar"))
+    check("スマホ：未来視点ボタンは下の操作バー（案内つき）", m.is_visible("#mFuture") and m.is_hidden("#futureToggle") and "coach" in (m.get_attribute("#mFuture", "class") or ""))
+    # 同じ段のボタンは上下中央ぞろえで上端がずれるので、中心の高さが15px以上離れたら別の段と数える
+    rows = m.evaluate("() => { const c = [...document.querySelectorAll('.topbar > *')].map(e => e.getBoundingClientRect()).filter(r => r.width && r.height).map(r => r.top + r.height / 2).sort((a, b) => a - b); return c.filter((y, i) => i === 0 || y - c[i - 1] > 15).length; }")
+    check("スマホ：上部のボタンは2段以内", rows <= 2, f"{rows}段")
+    m.tap("#moreBtn"); m.wait_for_timeout(150); m.tap("#moreHelp"); m.wait_for_timeout(150)
+    check("スマホ：「⋯」メニューから遊び方", m.is_visible("#helpModal")); m.tap("#helpClose")
+    check("スマホ：広告枠は操作バーの近く（チャート下）に出さない", m.is_hidden(".ad-banner"))
     over = m.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
     check("スマホ：横スクロールが発生しない", over <= 0, f"はみ出し {over}px")
     m.tap("#mQty"); m.tap("#mBuy"); m.wait_for_timeout(300); m.tap("#mSell"); m.wait_for_timeout(300)
     check("スマホ：売買", m.locator("#openBody tr").count() == 2, m.inner_text("#mQtyLabel"))
+    qh = m.evaluate("() => { const e = document.getElementById('mQtyLabel'); return e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).fontSize) / 1.4; }")   # 1行 ≒ 文字の大きさ×1.4
+    check("スマホ：数量表示が折り返さない", m.inner_text("#mQtyLabel") == "10万通貨" and qh < 1.5, f"{m.inner_text('#mQtyLabel')} {qh:.2f}行")
+    m.tap("#mFuture"); m.wait_for_timeout(200)
+    check("スマホ：操作バーから未来視点ON", "残り" in m.inner_text("#mFuture") and "残り" in m.inner_text("#futureToggle"))
     m.tap("#mClose"); m.wait_for_timeout(300)
     check("スマホ：決済", "建玉はありません" in m.inner_text("#openBody"))
     m.tap("#taBtn"); m.tap("#taStart"); m.wait_for_timeout(300)
@@ -183,7 +202,7 @@ with sync_playwright() as p:
     m.screenshot(path="tests/out/mobile.png")
     # --- ダークモード・プライバシーポリシー ---
     d = b.new_context(viewport={"width":1500,"height":950}, color_scheme="dark").new_page(); attach(d, "ダーク")
-    d.goto(URL); d.wait_for_timeout(500); d.click("#nickConfirm"); d.click("#helpClose"); d.wait_for_timeout(300)
+    d.goto(URL); d.wait_for_timeout(500); d.click("#helpClose"); d.wait_for_timeout(300)
     d.screenshot(path="tests/out/dark.png")
     check("ダークモード表示", True)
     pp = ctx.new_page(); attach(pp, "privacy"); pp.goto(URL_BASE + "/privacy.html"); pp.wait_for_timeout(200)
@@ -191,6 +210,7 @@ with sync_playwright() as p:
     # 広告（AdSense）：テスト用ビルドからは除いているので、公開用の index.html を直接確認する
     src = open("index.html", encoding="utf-8").read()
     csp = src.split('http-equiv="Content-Security-Policy" content="')[1].split('"')[0]
+    check("広告枠は広告ユニットを入れるまで表示しない", pg.locator(".ad-slot").count() == 2 and all(not pg.locator(".ad-slot").nth(i).is_visible() for i in range(2)))
     check("AdSense のコードと CSP の許可", "adsbygoogle.js?client=ca-pub-8966952880320749" in src
           and all(d in csp.split("script-src")[1].split(";")[0] for d in ("https://pagead2.googlesyndication.com", "https://*.adtrafficquality.google")))
     b.close()
