@@ -97,6 +97,34 @@ try:
             me.locator(".vfy").click(); pg.wait_for_timeout(1200)
             v = me.locator(".vfy").inner_text()
             check(f"ランキング（{per}）に自分の行・検証 ✓", "エミュレーター" in me.inner_text() and v.startswith("✓"), v)
+        # --- ウォルナットモード：専用ランキング（wn5）に登録 → 3期間のタブに自分の行・検証 ✓ ---
+        pg.click("#rankClose")
+        pg.click("#resetBtn"); pg.wait_for_timeout(300)   # 終わったタイムアタックを抜ける
+        pg.click("#symBtn"); pg.click("#symMenu .dd-item[data-sym=wlnt]"); pg.click("#modeStart"); pg.wait_for_timeout(400)
+        pg.click("#taBtn"); pg.click("#taStart"); pg.wait_for_timeout(300)
+        for i in range(3):
+            pg.click("#qBuy" if i % 2 == 0 else "#qSell"); pg.wait_for_timeout(900); pg.click("#closeAllBtn"); pg.wait_for_timeout(300)
+        pg.evaluate(FF(301000)); pg.wait_for_timeout(1300)
+        pg.click("#resRankBtn")
+        pg.wait_for_function("() => { const t = document.getElementById('resRankNote').innerText; return t && !t.includes('登録しています'); }", timeout=20000)
+        note = pg.inner_text("#resRankNote")
+        check("ウォルナット：専用ランキングに今日・今週・全期間すべて登録", note == "今日：登録 / 今週：登録 / 全期間：登録", note)
+        pg.evaluate("() => { document.getElementById('chalResultModal').hidden = true; }")
+        pg.click("#rankBtn")
+        for per in ("day", "week", "all"):
+            pg.click(f"#rankTabs button[data-p={per}]")
+            pg.wait_for_function("() => !document.getElementById('rankBody').innerText.includes('読み込み中')", timeout=15000)
+            me = pg.locator("#rankBody tr.me")
+            if me.count() != 1:
+                check(f"ウォルナット（{per}）に自分の行", False, pg.inner_text("#rankBody").replace("\n", " ")[:60]); continue
+            me.locator(".vfy").click(); pg.wait_for_timeout(1200)
+            v = me.locator(".vfy").inner_text()
+            check(f"ウォルナット（{per}）に自分の行・検証 ✓", "エミュレーター" in me.inner_text() and v.startswith("✓"), v)
+        # 通常のランキングとは別々（通常のタブには通常モードの記録だけ）
+        pg.click("#rankModeTabs button[data-g=normal]")
+        pg.wait_for_function("() => !document.getElementById('rankBody').innerText.includes('読み込み中')", timeout=15000)
+        eq = int(pg.locator("#rankBody tr td").nth(2).inner_text().replace("¥", "").replace(",", ""))
+        check("通常とウォルナットのランキングは別々（通常のタブは100万円前後の1件だけ）", pg.locator("#rankBody tr").count() == 1 and 900000 < eq < 1100000, f"{eq}")
         b.close()
 finally:
     server.terminate()

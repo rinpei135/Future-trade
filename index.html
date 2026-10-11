@@ -420,6 +420,20 @@
   .vs-mark { font-weight: 800; color: #a78bfa; }
   #chalModal, #chalResultModal { z-index: 92; }
   .foot-link { color: var(--text-mid); }
+  /* ウォルナットモード */
+  #symMenu { min-width: 290px; }
+  .dd-head { font-size: 0.64rem; font-weight: 700; color: var(--text-dim); padding: 8px 10px 4px; }
+  .dd-head.wn { color: #d08a4e; border-top: 1px solid var(--border); margin-top: 4px; }
+  body.walnut .tb-btn.sym { border-color: #d08a4e; color: #d08a4e; }
+  /* PCの上部は1段に収めるため余白がなく、🌰はスマホ（上部が2段で余裕がある）だけ付ける */
+  @media (max-width: 980px) { body.walnut .tb-btn.sym::before { content: "🌰"; margin-right: 4px; } }
+  .chal-badge.wn { background: #d08a4e; color: #1a0f05; }
+  .wn-rules { margin: 10px 0 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .wn-rules > div { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
+  .wn-rules small { display: block; font-size: 0.6rem; color: var(--text-dim); }
+  .wn-rules b { font-size: 0.9rem; }
+  .wn-key { text-align: center; font-size: 0.86rem; font-weight: 800; color: #d08a4e; margin: 4px 0 2px; }
+  .rank-mode-tabs { margin: 10px 0 0; }
   .joke-strip { font-size: 0.7rem; color: var(--text-dim); border-top: 1px solid var(--border); padding: 12px 18px 24px; line-height: 1.7; }
 </style>
 </head>
@@ -508,7 +522,7 @@
     </div>
 
     <div class="strap">
-      チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
+      チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。銘柄メニューからは、軍資金30万円・レバレッジ100倍・未来視点は1回だけの「🌰ウォルナットモード」も選べます。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
       操作：ドラッグで過去へスクロール、ホイールで拡大縮小、ダブルクリックで最新に戻ります。青い建玉ラインを上下にドラッグすると利確・損切を設定でき、利確・損切・指値のラインもドラッグで動かせます。チャート左上の売り／買いの価格をクリックすると、ワンクリックで成行注文できます。
     </div>
   </div>
@@ -533,6 +547,7 @@
       <div class="bracket-hint mono" id="bracketHint"></div>
       <div class="field-row"><span id="execLabel">発注レート</span><b class="mono" id="execPriceLabel">---</b></div>
       <div class="field-row"><span>必要証拠金</span><b class="mono" id="marginLabel">¥0</b></div>
+      <div class="field-row"><span>1円動くと</span><b class="mono" id="perYenLabel">±¥0</b></div>
       <div class="field-row"><span>レバレッジ</span><b class="mono" id="leverageLabel">25倍</b></div>
       <div class="field-row"><span>余力</span><b class="mono" id="freeMarginLabel">¥1,000,000</b></div>
       <div class="field-row"><span>資産</span><b class="mono" id="balanceVal">¥1,000,000</b></div>
@@ -595,7 +610,7 @@
 </div>
 
 <div class="joke-strip">
-  ※これはジョーク用シミュレーターです。表示されるレート・株価・板情報は実際の市場データではなく、ブラウザ内で生成した架空の値動きです。通貨「クロノ（CRN）」は実在しない架空の通貨、「トキワープHD（TKWP）」は実在しない架空の企業であり、実在の通貨・企業・証券コードとは一切関係ありません。資産・損益・スワップ・金利・ニュースもすべて仮想のものです。実際の投資判断には使わないでください。
+  ※これはジョーク用シミュレーターです。表示されるレート・株価・板情報は実際の市場データではなく、ブラウザ内で生成した架空の値動きです。通貨「クロノ（CRN）」は実在しない架空の通貨、「ウォルナット（WLNT）」は実在しない架空の通貨、「トキワープHD（TKWP）」は実在しない架空の企業であり、実在の通貨・企業・証券コードとは一切関係ありません。資産・損益・スワップ・金利・ニュースもすべて仮想のものです。実際の投資判断には使わないでください。
   <br><a class="foot-link" href="privacy.html">プライバシーポリシー・利用上の注意</a>
 </div>
 
@@ -649,6 +664,7 @@
   <div class="modal-box narrow">
     <div class="chal-badge">⚔ 挑戦状が届きました</div>
     <p class="chal-from"><b id="chalFrom"></b> さんからの挑戦状</p>
+    <div class="wn-key" id="chalMode" hidden>🌰 ウォルナットモード（軍資金30万円・レバレッジ100倍・未来視点1回）</div>
     <div class="chal-stats">
       <div><small>挑戦者の最終資産</small><b class="mono" id="chalEquity"></b><span id="chalRet"></span></div>
       <div><small>勝負の時間</small><b id="chalDur"></b></div>
@@ -688,16 +704,48 @@
 
 <div class="modal" id="taModal" hidden>
   <div class="modal-box narrow">
-    <div class="chal-badge ta">⏱ 5分タイムアタック</div>
+    <div class="chal-badge ta" id="taBadge">⏱ 5分タイムアタック</div>
     <p class="chal-from">新しい相場で、5分間の成績を競います</p>
     <ul class="howto-list">
-      <li>軍資金100万円から、5分後の最終資産で勝負します。時間になると自動で全決済されます。</li>
-      <li>未来視点（30秒・クールダウン60秒）は、5分間で最大4回使えます。</li>
-      <li>終了後、成績をランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。</li>
+      <li id="taLi1">軍資金100万円から、5分後の最終資産で勝負します。時間になると自動で全決済されます。</li>
+      <li id="taLi2">未来視点（30秒・クールダウン60秒）は、5分間で最大4回使えます。</li>
+      <li id="taLi3">終了後、成績をランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。</li>
     </ul>
     <p class="nick-note">今のフリープレイの建玉と資産はリセットされます。</p>
     <button class="go-btn buy" id="taStart">スタート</button>
     <button class="chal-skip" id="taCancel">やめておく</button>
+  </div>
+</div>
+
+<div class="modal" id="modeModal" hidden>
+  <div class="modal-box narrow">
+    <div id="modeWalnutBody">
+      <div class="chal-badge wn">🌰 ウォルナットモード</div>
+      <p class="chal-from">レバレッジ100倍の一発勝負</p>
+      <div class="wn-rules">
+        <div><small>軍資金</small><b class="mono">¥300,000</b></div>
+        <div><small>レバレッジ</small><b class="mono">100倍</b></div>
+        <div><small>数量</small><b>1枚＝1万通貨</b></div>
+        <div><small>未来視点</small><b>1回だけ（30秒）</b></div>
+      </div>
+      <div class="wn-key">30枚なら、1円の値動きで±30万円</div>
+      <ul class="howto-list">
+        <li>銘柄は架空の通貨「ウォルナット（WLNT/JPY）」だけ。値動きが激しく、数秒で急落してすぐ戻る「ヒゲ」が出ます。急変時はスプレッドが広がり、約定もずれます。</li>
+        <li>証拠金維持率が20%を下回るとロスカット。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。</li>
+        <li>5分タイムアタックの成績は、ウォルナット専用のランキングに登録されます。</li>
+      </ul>
+    </div>
+    <div id="modeNormalBody" hidden>
+      <div class="chal-badge ta">通常モード</div>
+      <p class="chal-from">通常モードに戻ります</p>
+      <ul class="howto-list">
+        <li>軍資金100万円で、クロノ（CRN/JPY）とトキワープHD（TKWP）を取引します。</li>
+        <li>未来視点は30秒・クールダウン60秒で、何度でも使えます。</li>
+      </ul>
+    </div>
+    <p class="nick-note">今のフリープレイの建玉と資産はリセットされ、新しい相場になります。</p>
+    <button class="go-btn buy" id="modeStart">切り替える</button>
+    <button class="chal-skip" id="modeCancel">やめておく</button>
   </div>
 </div>
 
@@ -709,6 +757,7 @@
       <li><b>「未来視点」で30秒先が見える</b><br>ONにすると、チャートの右側に30秒先の値動きが破線で透けて見えます。使えるのは30秒だけで、そのあと60秒のクールダウンがあります。</li>
       <li><b>安く買って高く売る（売りから入ってもOK）</b><br>上がりそうなら「買い」、下がりそうなら「売り」で入り、決済した時点で損益が確定します。</li>
       <li><b>5分タイムアタックでランキングへ</b><br>5分間の成績でランキングに挑戦したり、同じ相場の挑戦状を友達に送ったりできます。</li>
+      <li><b>🌰 ウォルナットモード</b><br>銘柄メニューから選べる一発勝負。軍資金30万円・レバレッジ100倍で、30枚持てば1円の値動きで30万円動きます。未来視点は1回だけです。</li>
     </ol>
     <button class="go-btn buy" id="helpClose">はじめる</button>
   </div>
@@ -725,8 +774,12 @@
 <div class="modal" id="rankModal" hidden>
   <div class="modal-box">
     <div class="rank-head">
-      <h3>🏆 5分タイムアタック ランキング</h3>
+      <h3 id="rankTitle">🏆 5分タイムアタック ランキング</h3>
       <button class="mini-btn" id="rankRefreshBtn">更新</button>
+    </div>
+    <div class="seg rank-mode-tabs" id="rankModeTabs">
+      <button data-g="normal" class="active">通常（100万円）</button>
+      <button data-g="walnut">🌰 ウォルナット（30万円）</button>
     </div>
     <div class="seg rank-tabs" id="rankTabs">
       <button data-p="day" class="active">今日</button>

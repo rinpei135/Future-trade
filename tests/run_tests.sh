@@ -11,6 +11,7 @@ SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT
 sleep 1
 echo "=== 総合テスト ==="; "$PY" tests/e2e.py
+echo "=== ウォルナットモード ==="; "$PY" tests/walnut.py
 echo "=== XSS検査 ==="; "$PY" tests/xss.py
 if [ -d tests/rules/node_modules ]; then
   echo "=== Firestoreルール＋ランキング（エミュレーター） ==="; ( cd tests/rules && npm test --silent )

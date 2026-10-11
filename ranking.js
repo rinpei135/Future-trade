@@ -1,4 +1,4 @@
-// ===== ランキング（Firestore）連携：5分タイムアタック専用 =====
+// ===== ランキング（Firestore）連携：5分タイムアタック専用（通常モード・ウォルナットモードで別々） =====
 // Firebase公式CDN（バージョン固定）から読み込む。app / auth / firestore は必ず同じバージョンにそろえること。
 // firebaseConfigの値は公開されて良い情報で、実際のアクセス制限はFirestoreのセキュリティルールで行います。
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
@@ -19,13 +19,19 @@ const firebaseConfig = {
 const RECAPTCHA_V3_SITE_KEY = "";
 
 const EQUITY_CAP = 10000000;       // 資産の上限：1,000万円＝軍資金の10倍（ルール側と同じ値）
+// モードごとの設定（ルール側と同じ値）。コレクション名の頭：通常 ta5、ウォルナット wn5
+const GAMES = {
+  normal: { prefix: "ta5", cap: EQUITY_CAP },
+  walnut: { prefix: "wn5", cap: 3000000 }    // 軍資金30万円の10倍
+};
 // 期間別のランキング。コレクション名は日本時間の日付・週から作る（ルール側でも同じ計算で検査）
 const JST = 9 * 3600 * 1000;
-function periodCollection(period) {
+function periodCollection(period, game) {
+  const pre = (GAMES[game] || GAMES.normal).prefix;
   const now = Date.now();
-  if (period === "day") { const d = new Date(now + JST); return "ta5d_" + d.getUTCFullYear() + "_" + (d.getUTCMonth() + 1) + "_" + d.getUTCDate(); }
-  if (period === "week") return "ta5w_" + Math.floor((now + JST + 3 * 86400000) / 604800000);
-  return "ta5";
+  if (period === "day") { const d = new Date(now + JST); return pre + "d_" + d.getUTCFullYear() + "_" + (d.getUTCMonth() + 1) + "_" + d.getUTCDate(); }
+  if (period === "week") return pre + "w_" + Math.floor((now + JST + 3 * 86400000) / 604800000);
+  return pre;
 }
 const PERIODS = ["all", "week", "day"];
 
@@ -56,8 +62,10 @@ const num = (v, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) 
 // 戻り値: [{ period, status: "created" | "updated" | "notBest" | "error", best }]
 async function submitBest(data) {
   const user = await ensureUser();
+  const game = data.game === "walnut" ? "walnut" : "normal";
+  const cap = GAMES[game].cap;
   const equity = Math.round(num(data.equity, 0, 1e12));
-  if (equity > EQUITY_CAP) return { tooHigh: true, results: [] };
+  if (equity > cap) return { tooHigh: true, cap, results: [] };
   const record = {
     nickname: String(data.nickname || "").slice(0, 20) || "名無しの未来人",
     equity,
@@ -73,7 +81,7 @@ async function submitBest(data) {
   const results = [];
   for (const period of PERIODS) {
     try {
-      const ref = doc(db, periodCollection(period), user.uid);
+      const ref = doc(db, periodCollection(period, game), user.uid);
       const snap = await getDoc(ref);
       const prev = snap.exists() ? snap.data() : null;
       if (prev && Number(prev.equity) >= equity) { results.push({ period, status: "notBest", best: Number(prev.equity) }); continue; }
@@ -84,12 +92,12 @@ async function submitBest(data) {
       results.push({ period, status: "error", error: String(e && (e.code || e.message) || "") });
     }
   }
-  return { tooHigh: false, results };
+  return { tooHigh: false, cap, results };
 }
 
-async function fetchTop(period, n) {
+async function fetchTop(period, n, game) {
   ready();
-  const q = query(collection(db, periodCollection(period)), orderBy("equity", "desc"), limit(n || 20));
+  const q = query(collection(db, periodCollection(period, game)), orderBy("equity", "desc"), limit(n || 20));
   const snap = await getDocs(q);
   const rows = [];
   snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
