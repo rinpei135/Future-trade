@@ -425,8 +425,6 @@
   .dd-head { font-size: 0.64rem; font-weight: 700; color: var(--text-dim); padding: 8px 10px 4px; }
   .dd-head.wn { color: #d08a4e; border-top: 1px solid var(--border); margin-top: 4px; }
   body.walnut .tb-btn.sym { border-color: #d08a4e; color: #d08a4e; }
-  /* PCの上部は1段に収めるため余白がなく、🌰はスマホ（上部が2段で余裕がある）だけ付ける */
-  @media (max-width: 980px) { body.walnut .tb-btn.sym::before { content: "🌰"; margin-right: 4px; } }
   .chal-badge.wn { background: #d08a4e; color: #1a0f05; }
   .wn-rules { margin: 10px 0 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .wn-rules > div { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
@@ -522,7 +520,7 @@
     </div>
 
     <div class="strap">
-      チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。銘柄メニューからは、軍資金30万円・レバレッジ100倍・未来視点は1回だけの「🌰ウォルナットモード」も選べます。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
+      チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。銘柄メニューからは、軍資金30万円・レバレッジ100倍・未来視点は1回だけの「ウォルナットモード」も選べます。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
       操作：ドラッグで過去へスクロール、ホイールで拡大縮小、ダブルクリックで最新に戻ります。青い建玉ラインを上下にドラッグすると利確・損切を設定でき、利確・損切・指値のラインもドラッグで動かせます。チャート左上の売り／買いの価格をクリックすると、ワンクリックで成行注文できます。
     </div>
   </div>
@@ -664,7 +662,7 @@
   <div class="modal-box narrow">
     <div class="chal-badge">⚔ 挑戦状が届きました</div>
     <p class="chal-from"><b id="chalFrom"></b> さんからの挑戦状</p>
-    <div class="wn-key" id="chalMode" hidden>🌰 ウォルナットモード（軍資金30万円・レバレッジ100倍・未来視点1回）</div>
+    <div class="wn-key" id="chalMode" hidden>ウォルナットモード（軍資金30万円・レバレッジ100倍・未来視点1回）</div>
     <div class="chal-stats">
       <div><small>挑戦者の最終資産</small><b class="mono" id="chalEquity"></b><span id="chalRet"></span></div>
       <div><small>勝負の時間</small><b id="chalDur"></b></div>
@@ -720,7 +718,7 @@
 <div class="modal" id="modeModal" hidden>
   <div class="modal-box narrow">
     <div id="modeWalnutBody">
-      <div class="chal-badge wn">🌰 ウォルナットモード</div>
+      <div class="chal-badge wn">ウォルナットモード</div>
       <p class="chal-from">レバレッジ100倍の一発勝負</p>
       <div class="wn-rules">
         <div><small>軍資金</small><b class="mono">¥300,000</b></div>
@@ -757,7 +755,7 @@
       <li><b>「未来視点」で30秒先が見える</b><br>ONにすると、チャートの右側に30秒先の値動きが破線で透けて見えます。使えるのは30秒だけで、そのあと60秒のクールダウンがあります。</li>
       <li><b>安く買って高く売る（売りから入ってもOK）</b><br>上がりそうなら「買い」、下がりそうなら「売り」で入り、決済した時点で損益が確定します。</li>
       <li><b>5分タイムアタックでランキングへ</b><br>5分間の成績でランキングに挑戦したり、同じ相場の挑戦状を友達に送ったりできます。</li>
-      <li><b>🌰 ウォルナットモード</b><br>銘柄メニューから選べる一発勝負。軍資金30万円・レバレッジ100倍で、30枚持てば1円の値動きで30万円動きます。未来視点は1回だけです。</li>
+      <li><b>ウォルナットモード</b><br>銘柄メニューから選べる一発勝負。軍資金30万円・レバレッジ100倍で、30枚持てば1円の値動きで30万円動きます。未来視点は1回だけです。</li>
     </ol>
     <button class="go-btn buy" id="helpClose">はじめる</button>
   </div>
@@ -779,7 +777,7 @@
     </div>
     <div class="seg rank-mode-tabs" id="rankModeTabs">
       <button data-g="normal" class="active">通常（100万円）</button>
-      <button data-g="walnut">🌰 ウォルナット（30万円）</button>
+      <button data-g="walnut">ウォルナット（30万円）</button>
     </div>
     <div class="seg rank-tabs" id="rankTabs">
       <button data-p="day" class="active">今日</button>

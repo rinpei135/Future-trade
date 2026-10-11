@@ -801,7 +801,7 @@
   Object.values(MODES).forEach(md => {
     const h = document.createElement("div");
     h.className = "dd-head" + (md.key === "walnut" ? " wn" : "");
-    h.textContent = md.key === "walnut" ? "🌰 ウォルナットモード（軍資金30万円・100倍）" : "通常モード（軍資金100万円）";
+    h.textContent = md.key === "walnut" ? "ウォルナットモード（軍資金30万円・100倍）" : "通常モード（軍資金100万円）";
     symMenu.appendChild(h);
     md.syms.forEach(k => {
       const c = INSTRUMENTS[k];
@@ -966,7 +966,7 @@
     view.offset = 0;
     switchSymbol(SYM_KEYS[0]);
     renderPositions();
-    toast(MODE.key === "walnut" ? "🌰 ウォルナットモード開始！軍資金30万円・レバレッジ100倍です" : "通常モードに戻りました（軍資金100万円）", "warn");
+    toast(MODE.key === "walnut" ? "ウォルナットモード開始！軍資金30万円・レバレッジ100倍です" : "通常モードに戻りました（軍資金100万円）", "warn");
   }
   $("modeStart").addEventListener("click", () => { $("modeModal").hidden = true; if (pendingMode && !challenge) switchMode(pendingMode); });
   $("modeCancel").addEventListener("click", () => { $("modeModal").hidden = true; });
@@ -1552,7 +1552,7 @@
     return { mode: "free", game: MODE.key, nickname, equity, ret, trades: stats.trades, winRate, futureRate, rank: rankFor(equity, ret, stats.trades + positions.length) };
   }
   function modeLabel(card) {
-    const pre = card.game === "walnut" ? "🌰ウォルナット・" : "";
+    const pre = card.game === "walnut" ? "ウォルナット・" : "";
     if (card.mode === "ta") return pre + "5分タイムアタック";
     if (card.mode === "chal") return pre + "vs " + challenge.n + "（挑戦状）";
     return pre + "フリープレイ";
@@ -1882,7 +1882,7 @@
     $("rankModal").hidden = false;
     $("rankTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.p === rankPeriod));
     $("rankModeTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.g === rankGame));
-    $("rankTitle").textContent = rankGame === "walnut" ? "🌰 ウォルナット 5分タイムアタック" : "🏆 5分タイムアタック ランキング";
+    $("rankTitle").textContent = rankGame === "walnut" ? "🏆 ウォルナット 5分タイムアタック ランキング" : "🏆 5分タイムアタック ランキング";
     $("rankBody").innerHTML = '<tr><td class="empty-row" colspan="6">読み込み中…</td></tr>';
     try {
       const api = await waitRankingReady();
@@ -2030,7 +2030,7 @@
   // 新しいランダム相場で5分タイムアタックを始める
   function startTimeAttack() {
     startChallenge({ mode: "ta", game: MODE.key, s: randomSeed(), a: 0, b: TA_MS, n: null, e: null, t: 0 });
-    toast(MODE.key === "walnut" ? "🌰 ウォルナット 5分タイムアタック開始！" : "5分タイムアタック開始！", "warn");
+    toast(MODE.key === "walnut" ? "ウォルナット 5分タイムアタック開始！" : "5分タイムアタック開始！", "warn");
   }
   function exitChallenge() {
     challenge = null;
@@ -2140,7 +2140,7 @@
   $("taBtn").addEventListener("click", () => {
     if (challenge) return;
     const wn = MODE.key === "walnut";
-    $("taBadge").textContent = wn ? "🌰 ウォルナット 5分タイムアタック" : "⏱ 5分タイムアタック";
+    $("taBadge").textContent = wn ? "⏱ ウォルナット 5分タイムアタック" : "⏱ 5分タイムアタック";
     $("taLi1").textContent = wn ? "軍資金30万円・レバレッジ100倍で、5分後の最終資産で勝負します。時間になると自動で全決済されます。"
       : "軍資金100万円から、5分後の最終資産で勝負します。時間になると自動で全決済されます。";
     $("taLi2").textContent = wn ? "未来視点（30秒）は1回だけ。証拠金維持率20%でロスカット、残高がマイナスになってもゼロカットで0円に戻ります。"
