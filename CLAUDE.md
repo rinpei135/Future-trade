@@ -75,6 +75,8 @@ claude.ai のチャットで開発してきた Web ゲームの引き継ぎ資�
 - **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`＋広告用ドメイン、`connect-src 'self' https://*.googleapis.com https://*.google.com`＋広告用ドメイン、`img-src` は `https:` 全体（広告画像のため。Firestore の接続確認用 `cleardot.gif` もこれで許可される）。
   広告用ドメインは `pagead2.googlesyndication.com`・`*.googlesyndication.com`・`*.doubleclick.net`・`*.adtrafficquality.google`・`fundingchoicesmessages.google.com`（script / connect / frame に許可）。
   外部スクリプトを増やす場合や App Check（reCAPTCHA）を入れる場合は CSP も確認すること（reCAPTCHA 用のドメインは許可済み）。
+- **キャッシュ対策**：GitHub Pages はファイルを10分間ブラウザにキャッシュさせるため、`index.html` だけ新しく `app.js` が古い、という食い違いが起きる。
+  `index.html` では `app.js?v=日付`・`ranking.js?v=日付` で読み込んでいるので、**`app.js` か `ranking.js` を変えたら `?v=` の日付を更新する**（2つは同じ値にそろえる。`e2e.py` で確認）
 - **Firebase SDK**：`https://www.gstatic.com/firebasejs/12.19.0/` から読み込む（app / auth / firestore / app-check は**必ず同じバージョン**にそろえる。混在すると Firestore が使えなくなる）。
 - **外部データの表示**：ランキング・挑戦状URL・ニックネームは他人が書き換えられる値。表示前に必ずエスケープ（`escapeHtml`）または `textContent` を使い、数値は `Number()` で変換してから使う。
 
