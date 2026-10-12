@@ -100,7 +100,7 @@ with sync_playwright() as p:
     pg.click("#chalShareBtn"); pg.wait_for_timeout(300)
     url = pg.input_value("#chalUrl")
     payload = json.loads(base64.urlsafe_b64decode(url.split("#c=")[1] + "==").decode("utf-8"))
-    check("挑戦状URLはv4・モードつき", payload.get("v") == 4 and payload.get("g") == "w", str(payload)[:80])
+    check("挑戦状URLはv5・モードつき", payload.get("v") == 5 and payload.get("g") == "w", str(payload)[:80])
     check("シェア文にウォルナットモード", "ウォルナット" in pg.input_value("#shareText") and "ウォルナット" in pg.inner_text("#rcDate"))
     pg.click("#shareClose")
     # 検証（ウォルナットのランキングとして本物・改ざん、通常のランキングとしては不一致）

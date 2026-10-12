@@ -46,9 +46,9 @@
       lots: [10000, 50000, 100000, 300000], defaultLot: 10000, minUnit: 10000, maxUnit: 1000000, unit: "枚", lotSize: 10000,
       scales: { 1: [0.1, 30], 5: [0.2, 26], 60: [0.5, 22], 300: [1, 20] },
       drift: 0.09, longRevert: 0.0003, noise: 0.02, revert: 0.08,
-      burstProb: 0.01, burstSize: 0.15, jumpProb: 0.0006, jumpMin: 0.4, jumpMax: 1.0,
-      // フラッシュクラッシュ：価格だけが一瞬で飛び、数秒かけて戻る（長いヒゲになる）
-      flashProb: 0.0008, flashMin: 0.6, flashMax: 1.6,
+      burstProb: 0.01, burstSize: 0.06, jumpProb: 0.0005, jumpMin: 0.3, jumpMax: 0.7,
+      // フラッシュクラッシュ（ヒゲ）：0.6〜1.6秒かけて25〜60銭急落（3割は上に急騰）し、そのうち7割を10秒ほどで戻す。残りの3割は戻らない
+      flashProb: 0.0003, flashMin: 0.25, flashMax: 0.6, flashKeep: 0.3, flashTicks: [3, 8], flashDecay: 0.96,
       limit: 0, floor: 30, volRef: 0.06, spreadCap: 6,
       orderOffset: 0.3, tpOffset: 0.5, slOffset: 0.3,
       rateBuy: 0.0001, rateSell: -0.00012, carryLabel: "スワップ",
@@ -63,8 +63,8 @@
         "ウォルナット国の格付けが引き下げ。市場に割れる音が響く。"
       ],
       newsFlash: [
-        "【急変】WLNT、数秒で急落し長い下ヒゲ。買い方のロスカットを巻き込んだ模様。",
-        "【急変】WLNT、一瞬で急騰し長い上ヒゲ。売り方のロスカットが連鎖した模様。"
+        "【急変】WLNT、数秒で急落し下ヒゲ。買い方の損切りを巻き込んだ模様。",
+        "【急変】WLNT、数秒で急騰し上ヒゲ。売り方の損切りが連鎖した模様。"
       ]
     }
   };
@@ -153,6 +153,7 @@
     const c = INSTRUMENTS[k], r = st.rng;
     let news = null;
     st.flash = false;
+    if (c.flashProb) st.price -= st.shock || 0;   // 急変の上乗せ分を外して、ふだんの値動きを計算する
     st.center += (r() - 0.5) * c.drift + (c.start - st.center) * c.longRevert;
     if (c.jumpProb && r() < c.jumpProb) {
       const up = r() < 0.5;
@@ -164,11 +165,19 @@
     if (lim) st.center = clamp(st.center, lim[0], lim[1]);
     const burst = r() < c.burstProb ? (r() - 0.5) * c.burstSize : 0;
     st.price += (st.center - st.price) * c.revert + gaussR(r) * c.noise + burst;
-    if (c.flashProb && r() < c.flashProb) {
-      const down = r() < 0.7;
-      st.price += (down ? -1 : 1) * (c.flashMin + r() * (c.flashMax - c.flashMin));
-      st.flash = true;
-      news = news || c.newsFlash[down ? 0 : 1];
+    if (c.flashProb) {
+      if (r() < c.flashProb) {
+        const dir = r() < 0.7 ? -1 : 1, size = c.flashMin + r() * (c.flashMax - c.flashMin);
+        st.center += dir * size * c.flashKeep;   // 一部は戻らずに残る
+        st.shockN = c.flashTicks[0] + Math.floor(r() * (c.flashTicks[1] - c.flashTicks[0] + 1));
+        st.shockStep = dir * size * (1 - c.flashKeep) / st.shockN;
+        st.flash = true;
+        news = news || c.newsFlash[dir < 0 ? 0 : 1];
+      }
+      // 数ティックかけて飛び、その後はゆっくり戻る
+      if (st.shockN > 0) { st.shock = (st.shock || 0) + st.shockStep; st.shockN--; }
+      else st.shock = (st.shock || 0) * c.flashDecay;
+      st.price += st.shock;
     }
     st.price = lim ? clamp(st.price, lim[0], lim[1]) : Math.max(c.floor, st.price);
     return news;
@@ -503,9 +512,9 @@
     const um = usedMargin();
     if (um <= 0) return;
     if ((balance + floatingTotal()) / um < MODE.losscut) {
-      // 直前（みんなに見えている価格で6秒以内）に急変があれば「ヒゲで刈られた」扱い
+      // 直前（みんなに見えている価格で10秒以内）に急変があれば「ヒゲで刈られた」扱い
       const cut = Date.now() - DELAY_MS;
-      if (positions.some(p => { const ft = engines[p.sym].flashT; return ft !== undefined && ft <= cut && ft > cut - 6000; })) stats.wicked = true;
+      if (positions.some(p => { const ft = engines[p.sym].flashT; return ft !== undefined && ft <= cut && ft > cut - 10000; })) stats.wicked = true;
       positions.slice().forEach(p => closeAt(p, exitPriceOf(p), "ロスカット"));
       renderPositions();
       const pct = Math.round(MODE.losscut * 100) + "%";
@@ -1949,9 +1958,10 @@
     if (!m) return null;
     try {
       const o = JSON.parse(b64urlDecode(m[1]));
-      // v3＝通常モード（従来の形式）、v4＝モードつき（g: "w" でウォルナット）。古いページがv4を通常モードと取り違えないよう版を分ける
-      const game = o && o.v === 4 && o.g === "w" ? "walnut" : "normal";
-      const ok = o && (o.v === 3 || (o.v === 4 && o.g === "w")) &&
+      // v3＝通常モード（従来の形式）、v5＝ウォルナットモード（g: "w"）。古いページが通常モードと取り違えないよう版を分ける
+      // （v4 は値動きを見直す前のウォルナット。相場が再現できないので受け付けない）
+      const game = o && o.v === 5 && o.g === "w" ? "walnut" : "normal";
+      const ok = o && (o.v === 3 || (o.v === 5 && o.g === "w")) &&
         Number.isInteger(o.s) && o.s >= 0 && o.s <= 4294967295 &&
         Number.isFinite(o.a) && Number.isFinite(o.b) &&
         o.a >= 0 && o.a <= 24 * 3600 * 1000 && Math.abs((o.b - o.a) - TA_MS) < TICK_MS;   // 5分勝負のみ受け付ける
@@ -1978,7 +1988,7 @@
   }
   function buildChallengeUrl(equity) {
     const range = challenge ? { a: challenge.a, b: challenge.b } : { a: roundStartM, b: currentM() };
-    const payload = MODE.key === "walnut" ? { v: 4, g: "w", s: marketSeed } : { v: 3, s: marketSeed };
+    const payload = MODE.key === "walnut" ? { v: 5, g: "w", s: marketSeed } : { v: 3, s: marketSeed };
     Object.assign(payload, { a: Math.round(range.a), b: Math.round(range.b), n: nickname || "", e: Math.round(equity), t: stats.trades });
     return shareBaseUrl() + "#c=" + b64urlEncode(JSON.stringify(payload));
   }
