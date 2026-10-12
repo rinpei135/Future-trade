@@ -213,6 +213,9 @@ with sync_playwright() as p:
     check("広告枠は広告ユニットを入れるまで表示しない", pg.locator(".ad-slot").count() == 2 and all(not pg.locator(".ad-slot").nth(i).is_visible() for i in range(2)))
     check("AdSense のコードと CSP の許可", "adsbygoogle.js?client=ca-pub-8966952880320749" in src
           and all(d in csp.split("script-src")[1].split(";")[0] for d in ("https://pagead2.googlesyndication.com", "https://*.adtrafficquality.google")))
+    import re
+    va, vr = re.search(r'src="app\.js\?v=(\d+)"', src), re.search(r'src="ranking\.js\?v=(\d+)"', src)
+    check("app.js・ranking.js に版番号（?v=）がつき、同じ版", bool(va and vr and va.group(1) == vr.group(1)), va.group(1) if va else "なし")
     b.close()
 print("\n".join(results))
 print("\nNG件数:", sum(1 for r in results if r.startswith("NG")), "/", len(results))
