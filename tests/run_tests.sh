@@ -12,6 +12,7 @@ trap 'kill $SERVER 2>/dev/null' EXIT
 sleep 1
 echo "=== 総合テスト ==="; "$PY" tests/e2e.py
 echo "=== ウォルナットモード ==="; "$PY" tests/walnut.py
+echo "=== 注文（成行・指値・逆指値・利確・損切） ==="; "$PY" tests/orders.py
 echo "=== スマホ・タブレット（Chromium・WebKit） ==="; "$PY" tests/mobile.py
 echo "=== XSS検査 ==="; "$PY" tests/xss.py
 if [ -d tests/rules/node_modules ]; then
