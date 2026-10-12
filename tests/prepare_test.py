@@ -1,6 +1,6 @@
 """テスト用ビルドを作る。
 リポジトリ直下の公開ファイルを .test-build/ にコピーし、
-- app.js にテスト用の参照口（window.__lr / __eng / __ep）を追加
+- app.js にテスト用の参照口（window.__lr / __eng / __ep / __pos / __ord / __qty / __lev）を追加
 - ranking.js を Firebase を使わないモックに差し替え（本番のランキングを汚さないため）
 使い方: python tests/prepare_test.py
 """
@@ -15,7 +15,10 @@ for f in ["index.html", "app.js", "ranking.js", "privacy.html", "manifest.webman
 a = (out / "app.js").read_text(encoding="utf-8")
 for old, new in [("let lastRound = null;", "let lastRound = null; window.__lr = () => lastRound;"),
                  ("const engines = {};", "const engines = {}; window.__eng = engines;"),
-                 ("function currentM() {", "window.__ep = () => marketEpoch; function currentM() {")]:
+                 ("function currentM() {", "window.__ep = () => marketEpoch; function currentM() {"),
+                 # 注文のテスト用：建玉・注文・数量・レバレッジを読み出す
+                 ("ALL_KEYS.forEach(k => { order.qty[k] = INSTRUMENTS[k].defaultLot; });",
+                  "ALL_KEYS.forEach(k => { order.qty[k] = INSTRUMENTS[k].defaultLot; }); window.__pos = () => JSON.parse(JSON.stringify(positions)); window.__ord = () => JSON.parse(JSON.stringify(orders)); window.__qty = (k) => order.qty[k]; window.__lev = (k) => INSTRUMENTS[k].leverage;")]:
     assert a.count(old) == 1, f"フック位置が見つかりません: {old}"
     a = a.replace(old, new, 1)
 (out / "app.js").write_text(a, encoding="utf-8")
