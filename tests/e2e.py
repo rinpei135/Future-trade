@@ -83,6 +83,13 @@ with sync_playwright() as p:
         for c in range(clicks): pg.mouse.click(box["x"]+300+c*150, box["y"]+200+c*40); pg.wait_for_timeout(100)
     pg.click("#toolEraser")
     check("描画ツール（トレンドライン・水平線・垂直線・消去）", True)
+    # 描画ツール一覧はチャートより手前に出る（チャートの裏に隠れない）
+    pg.click("#toolMore"); pg.wait_for_timeout(150)
+    front = pg.evaluate("""() => [...document.querySelectorAll('#toolFlyout .tf-item')].every(b => {
+        const r = b.getBoundingClientRect(), el = document.elementFromPoint(r.right - 8, r.top + r.height / 2);
+        return el && b.contains(el); })""")
+    check("描画ツール一覧がチャートより手前に表示される", front)
+    pg.click("#toolFlyout .tf-item[data-tool=cursor]")
     # --- 未来視点 ---
     pg.click("#futureToggle"); pg.wait_for_timeout(300)
     check("未来視点ON（残り表示）", "残り" in pg.inner_text("#futureToggle") and "coach" not in (pg.get_attribute("#futureToggle", "class") or ""))

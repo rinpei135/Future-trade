@@ -120,8 +120,10 @@
   /* ---------- layout ---------- */
   .body-grid { display: grid; grid-template-columns: 46px minmax(0, 1fr) 360px; align-items: start; }
   @media (max-width: 980px) { .body-grid { grid-template-columns: 1fr; } .rail { display: none !important; } }
+  /* sticky は重なりの単位（スタッキングコンテキスト）を作るので、中の描画ツール一覧（z-index: 60）が
+     チャートより手前に出るよう、列そのものに z-index を付ける（上部バー 40 より下） */
   .rail {
-    position: sticky; top: var(--topbar-h, 53px); height: calc(100vh - var(--topbar-h, 53px));
+    position: sticky; top: var(--topbar-h, 53px); height: calc(100vh - var(--topbar-h, 53px)); z-index: 30;
     background: var(--rail); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 4px;
   }
@@ -773,7 +775,7 @@
 </div>
 
 <!-- ?v= はブラウザに古い app.js / ranking.js が残らないための版番号。どちらかを変えたら更新する（日付＋その日の連番2桁） -->
-<script src="app.js?v=2026101205"></script>
-<script type="module" src="ranking.js?v=2026101205"></script>
+<script src="app.js?v=2026101206"></script>
+<script type="module" src="ranking.js?v=2026101206"></script>
 </body>
 </html>

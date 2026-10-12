@@ -2251,7 +2251,7 @@
   $("mQty").addEventListener("click", () => {
     const lots = INSTRUMENTS[currentSym].lots, cur = order.qty[currentSym];
     const next = lots[(lots.indexOf(cur) + 1) % lots.length] || lots[0];
-    order.qty[currentSym] = next; qtyInput.value = next; renderLots(); updateOrderPanel();
+    order.qty[currentSym] = next; qtyInput.value = qtyDisp(currentSym, next); renderLots(); updateOrderPanel(); updateMobileBar();   // 表示はすぐ切り替える
   });
   function updateMobileBar() {
     const k = currentSym;
