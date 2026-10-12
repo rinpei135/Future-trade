@@ -81,8 +81,8 @@ claude.ai のチャットで開発してきた Web ゲームの引き継ぎ資�
 - **成績の検証**：登録時にシード値と取引記録（`log`：`銘柄,売買,数量,建て時刻,建値,決済時刻,決済値,スワップ;…`）を保存。
   ランキングの「検証」ボタンで `verifyRound(seed, equity, log, game)` が相場を作り直し、各約定価格がその時点の相場と一致するか（許容差：通常の銘柄はスプレッド×4.5＋1ティック、WLNT はスプレッドの広がりが大きいぶん×5.4、時刻±800ms）、損益の合計が最終資産と合うかを判定する。
   ウォルナットはゼロカットも同じ規則で計算する（その決済で建玉がなくなり残高がマイナスなら0円）。
-- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`＋広告用ドメイン、`connect-src 'self' https://*.googleapis.com https://*.google.com`＋広告用ドメイン、`img-src` は `https:` 全体（広告画像のため。Firestore の接続確認用 `cleardot.gif` もこれで許可される）。
-  広告用ドメインは `pagead2.googlesyndication.com`・`*.googlesyndication.com`・`*.doubleclick.net`・`*.adtrafficquality.google`・`fundingchoicesmessages.google.com`（script / connect / frame に許可）。
+- **CSP**：`script-src 'self' https://www.gstatic.com https://www.google.com`、`connect-src 'self' https://*.googleapis.com https://*.google.com`、
+  `img-src 'self' data: blob: https://www.google.com https://www.gstatic.com`（Firestore の接続確認用 `cleardot.gif` は www.google.com）。広告をやめたため広告用ドメインは外した。
   外部スクリプトを増やす場合や App Check（reCAPTCHA）を入れる場合は CSP も確認すること（reCAPTCHA 用のドメインは許可済み）。
 - **キャッシュ対策**：GitHub Pages はファイルを10分間ブラウザにキャッシュさせるため、`index.html` だけ新しく `app.js` が古い、という食い違いが起きる。
   `index.html` では `app.js?v=日付`・`ranking.js?v=日付` で読み込んでいるので、**`app.js` か `ranking.js` を変えたら `?v=` を更新する**（日付＋その日の連番2桁。例 `2026101202`）（2つは同じ値にそろえる。`e2e.py` で確認）
@@ -128,7 +128,7 @@ bash tests/run_tests.sh      # リポジトリ直下で実行
 python3 tests/smoke_prod.py  # 本番サイトの確認（読み取りのみ）。--write で本番ランキングに書き込む通し確認
 ```
 
-- `tests/prepare_test.py`：公開ファイルを `.test-build/` にコピーし、テスト用の参照口を追加、`ranking.js` を Firebase を使わないモックに差し替える（本番ランキングを汚さない）。本物の広告（AdSense）のコードも取り除く。`smoke_prod.py`・`ranking_emulator.py` も広告の通信を遮断している（自動操作での広告表示は無効なトラフィック扱いになりうるため）
+- `tests/prepare_test.py`：公開ファイルを `.test-build/` にコピーし、テスト用の参照口を追加、`ranking.js` を Firebase を使わないモックに差し替える（本番ランキングを汚さない）。（広告は掲載していないので、広告のコードを取り除く処理はない）
 - `tests/e2e.py`：PC・スマホの総合テスト 58 項目（初回導線（名前は後回し・未来視点の案内）、取引・注文、チャート操作、未来視点、株・板、裏タブ復帰、タイムアタック、ランキング登録データ、成績画像、検証の本物/改ざん判定、挑戦状の相場再現・勝敗、スマホ操作、ダークモード、CSP 違反の検出）
 - `tests/walnut.py`：ウォルナットモードの総合テスト 50 項目（スプレッド0.5銭、指標発表の予告・10秒前の案内・発表時のニュースとスプレッド拡大、モード切り替え、枚数・1円あたりの損益、未来視点1回、ロスカット20%・ゼロカット・退場、称号、専用ランキングへの登録と検証、挑戦状v6の相場再現、通常モードへの復帰、スマホ、PC幅1500で上部1段）
 - `tests/xss.py`：攻撃文字列 10 種 × 3 か所（挑戦状URL・ニックネーム・ランキング）でスクリプトが実行されないことを確認
@@ -162,14 +162,12 @@ python3 tests/smoke_prod.py  # 本番サイトの確認（読み取りのみ）�
 5分タイムアタック、匿名ログイン＋1人1件、成績の検証、期間別ランキング、効果音・振動、PWA、OGP、プライバシーポリシー、
 軍資金100万円・上限1,000万円への変更、GitHub Pages での公開、の順で開発した。
 
-## 10. 広告（Google AdSense）
+## 10. 広告（掲載しない方針）
 
-- サイト運営者ID：`ca-pub-8966952880320749`（AdMob と同じ番号）。`index.html` の `<head>` に AdSense のコードを入れている
-- AdSense のサイトは `rinpei135.github.io`（ドメイン単位）。`ads.txt` とトップページは別リポジトリ `rinpei135/rinpei135.github.io` にある（Cafelyze と共用。`app-ads.txt` は AdMob 用なので消さない）
-- 自動広告は売買ボタンの近くに広告が出て誤クリック（規約違反）につながるおそれがあるため、**審査通過後は自動広告を使わず、`index.html` の広告枠（`data-ad-slot` の2か所）に広告ユニットを手動で置く**方針
-- 広告枠は `ad-inner` に広告ユニットを入れて `class` に `ad-live` を付けるまで非表示（サンプル表示は審査で「作りかけ」に見えるため外した）。
-  **チャート下の横長バナー（`ad-banner`）はスマホでは出さない**（固定の売買バーのすぐ上に来て誤タップを招くため）。スマホはサイドの四角い枠（`ad-rect`）だけ
-- 広告に関するプライバシーポリシーの記載は `privacy.html` の「広告について」
+- 2026年10月に Google AdSense の審査で「有用性の低いコンテンツ」と判定されたため、**広告なしで運営する**ことにした
+- `index.html` の AdSense のコード・広告枠・CSP の広告用ドメイン、`privacy.html` の「広告について」、トップページ（別リポジトリ `rinpei135/rinpei135.github.io`）の AdSense のコードと「広告について」は削除済み
+- `rinpei135.github.io` の `ads.txt` は害がなく、将来また広告を出すときに使えるので残している。`app-ads.txt` は Cafelyze（AdMob）用なので消さない
+- また広告を出す場合：AdSense の審査は「文章として役に立つページ」の量を見る。ゲーム画面だけでは不合格になるので、遊び方ガイド・解説記事・よくある質問などの読み物ページを先に増やすこと
 
 ## 11. 画面まわりの仕様（初回導線・スマホ）
 

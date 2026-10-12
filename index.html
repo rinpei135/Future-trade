@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net https://*.adtrafficquality.google https://fundingchoicesmessages.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.google.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net https://*.adtrafficquality.google https://fundingchoicesmessages.google.com; frame-src https://*.google.com https://future-vision-trade.firebaseapp.com https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net https://*.adtrafficquality.google https://fundingchoicesmessages.google.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.google.com https://www.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.google.com; frame-src https://*.google.com https://future-vision-trade.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'none'">
 <!-- CSP：インラインの<script>やonclick等のイベント属性は禁止。外部スクリプトを増やすときはここも更新 -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>30秒先が見えるトレード</title>
@@ -24,8 +24,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- Google AdSense（サイト運営者ID ca-pub-8966952880320749）。CSP の script-src / frame-src / connect-src に広告用ドメインを許可済み -->
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8966952880320749" crossorigin="anonymous"></script>
 <style>
   :root {
     --bg: #0b0f16; --panel: #10151d; --panel-2: #151b25; --rail: #0d1219;
@@ -185,12 +183,6 @@
   .sw.dash { width: 13px; height: 2px; display: inline-block; background: repeating-linear-gradient(90deg, var(--future) 0 6px, transparent 6px 10px); }
   .strap { margin: 10px 12px 16px; padding: 8px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-dim); font-size: 0.74rem; line-height: 1.65; }
 
-  /* ---------- ads ---------- */
-  .ad-slot { border: 1px dashed var(--border); border-radius: 8px; background: var(--panel-2); position: relative; overflow: hidden; }
-  .ad-label { position: absolute; top: 4px; right: 6px; font-size: 0.58rem; color: var(--text-dim); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; background: var(--panel); }
-  .ad-banner { margin: 10px 12px 0; min-height: 90px; display: flex; align-items: center; justify-content: center; }
-  .ad-rect { min-height: 250px; display: flex; align-items: center; justify-content: center; }
-
   /* ---------- sidebar ---------- */
   .side-col {
     border-left: 1px solid var(--border); padding: 14px; display: flex; flex-direction: column; gap: 12px;
@@ -319,8 +311,6 @@
   .mbar { display: none; }
   .mob-only { display: none; }
   .dd-menu.dd-right { left: auto; right: 0; min-width: 170px; }
-  /* 広告ユニットを入れるまでは広告枠を出さない */
-  .ad-slot:not(.ad-live) { display: none !important; }
   /* 初回だけ「未来視点」ボタンを光らせて、最初に押すボタンを案内する */
   @keyframes coachPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(240,180,41,0.75); } 50% { box-shadow: 0 0 0 9px rgba(240,180,41,0); } }
   .coach { animation: coachPulse 1.2s ease-in-out infinite; border-color: var(--future) !important; color: var(--future) !important; }
@@ -328,8 +318,6 @@
   @media (max-width: 980px) {
     .desk-only, .lbl, .tb-spacer, .mob-hide { display: none !important; }
     .mob-only { display: block; }
-    .ad-banner { display: none !important; }
-    .ad-rect { margin: 16px 0; }
     .topbar { gap: 6px; padding: 6px 8px; }
     .tb-btn, .ta-btn, .share-btn { padding: 6px 8px; font-size: 0.72rem; }
     .tf-pill { padding: 4px 7px; font-size: 0.7rem; }
@@ -514,13 +502,6 @@
     </div>
     <div class="legend-row" id="legendRow"></div>
 
-    <!-- 広告枠（横長バナー・PCのみ）: AdSense の広告ユニットを ad-inner に入れ、class に ad-live を付けると表示される。
-         スマホでは売買の操作バーに近くなり誤タップを招くため表示しない -->
-    <div class="ad-slot ad-banner" data-ad-slot="chart-bottom-banner">
-      <span class="ad-label">広告</span>
-      <div class="ad-inner"></div>
-    </div>
-
     <div class="strap">
       チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。銘柄メニューからは、軍資金30万円・レバレッジ100倍・未来視点は1回だけの「ウォルナットモード」も選べます。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
       操作：ドラッグで過去へスクロール、ホイールで拡大縮小、ダブルクリックで最新に戻ります。青い建玉ラインを上下にドラッグすると利確・損切を設定でき、利確・損切・指値のラインもドラッグで動かせます。チャート左上の売り／買いの価格をクリックすると、ワンクリックで成行注文できます。
@@ -588,12 +569,6 @@
     <div class="news-card">
       <span class="tag">ニュース・たった今</span>
       <span id="newsText">未来が見えるトレーダーが1名、この端末に出現した模様。</span>
-    </div>
-
-    <!-- 広告枠（レクタングル）: AdSense の広告ユニットを ad-inner に入れ、class に ad-live を付けると表示される -->
-    <div class="ad-slot ad-rect" data-ad-slot="sidebar-rect">
-      <span class="ad-label">広告</span>
-      <div class="ad-inner"></div>
     </div>
 
     <div class="card">
