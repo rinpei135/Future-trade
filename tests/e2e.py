@@ -92,10 +92,10 @@ with sync_playwright() as p:
     pg.evaluate(FF(61000)); pg.wait_for_timeout(700)
     check("クールダウン明けで再使用可能", pg.inner_text("#futureToggle").strip().endswith("未来視点を使う"), pg.inner_text("#futureToggle"))
     # --- 株・板・ストップ高 ---
-    pg.click("#symBtn"); pg.click("#symMenu .dd-item:nth-child(2)"); pg.wait_for_timeout(400)
+    pg.click("#symBtn"); pg.click("#symMenu .dd-item[data-sym=tokiwarp]"); pg.wait_for_timeout(400)
     check("株に切替・板表示", pg.is_visible("#boardCard") and pg.locator("#boardBody tr").count() == 10)
     pg.click("#qBuy"); pg.wait_for_timeout(300); pg.click("#closeAllBtn")
-    pg.click("#symBtn"); pg.click("#symMenu .dd-item:nth-child(1)")
+    pg.click("#symBtn"); pg.click("#symMenu .dd-item[data-sym=crnjpy]")
     # --- 裏タブ復帰（3分停止） ---
     pg.evaluate(FF(180000)); pg.wait_for_timeout(1200)
     gap = pg.evaluate("""() => { const ts = window.__eng.crnjpy.ticks; let mx = 0; for (let i=1;i<ts.length;i++) mx = Math.max(mx, ts[i].t - ts[i-1].t); return mx; }""")

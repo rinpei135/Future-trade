@@ -26,7 +26,7 @@ h, n = re.subn(r'<script async src="https://pagead2\.googlesyndication\.com/[^"]
 assert n == 1, "AdSense のコードが見つかりません"
 (out / "index.html").write_text(h, encoding="utf-8")
 (out / "ranking.js").write_text('''window.__sub=[]; window.Ranking={ready:true,EQUITY_CAP:10000000,myId:()=>"me",
- submitBest:async d=>{window.__sub.push(d);return {tooHigh:false,results:[{period:"day",status:"created",best:d.equity},{period:"week",status:"created",best:d.equity},{period:"all",status:"created",best:d.equity}]}},
- fetchTop:async()=>window.__rows||[]}; window.dispatchEvent(new Event("ranking-ready"));
+ submitBest:async d=>{window.__sub.push(d);const cap=d.game==="walnut"?3000000:10000000;if(d.equity>cap)return {tooHigh:true,cap,results:[]};return {tooHigh:false,cap,results:[{period:"day",status:"created",best:d.equity},{period:"week",status:"created",best:d.equity},{period:"all",status:"created",best:d.equity}]}},
+ fetchTop:async(period,n,game)=>{(window.__fetch=window.__fetch||[]).push(game||"normal");return window.__rows||[]}}; window.dispatchEvent(new Event("ranking-ready"));
 ''', encoding="utf-8")
 print("テスト用ビルドを作成しました:", out)

@@ -5,7 +5,13 @@
   const TICK_MS = 200;
   const DELAY_MS = 30000;
   const BACKFILL_MS = 8 * 3600 * 1000;       // 起動時に生成する過去データ（8時間分）
-  const START_BALANCE = 1000000;   // 軍資金100万円
+  // ゲームモード。ウォルナットモードは軍資金30万円・レバレッジ100倍・WLNT/JPYだけの一発勝負
+  const MODES = {
+    normal: { key: "normal", label: "通常", syms: ["crnjpy", "tokiwarp"], balance: 1000000, losscut: 0.5, futureUses: Infinity, zeroCut: false, bestKey: "futurefx_best_v7" },
+    walnut: { key: "walnut", label: "ウォルナット", syms: ["wlnt"], balance: 300000, losscut: 0.2, futureUses: 1, zeroCut: true, bestKey: "futurefx_best_wn1" }
+  };
+  let MODE = MODES.normal;
+  let START_BALANCE = MODE.balance;   // 軍資金（通常100万円・ウォルナット30万円）
   const SHARE_URL = "https://rinpei135.github.io/Future-trade/"; // 公開先URL（自前ホスティング時は差し替え）
   const HASHTAG = "#30秒先が見えるトレード";
 
@@ -32,9 +38,39 @@
       limit: 80, floor: 50, volRef: 2.5,           // 前日終値482円 → 値幅制限±80円
       orderOffset: 5, tpOffset: 15, slOffset: 8,
       rateBuy: -0.000077, rateSell: -0.000032, carryLabel: "金利"
+    },
+    // ウォルナットモード専用。1枚＝1万通貨。30枚（30万通貨）なら1円の値動きで30万円動く
+    wlnt: {
+      key: "wlnt", code: "WLNT/JPY", name: "ウォルナット/日本円", kind: "fx",
+      start: 96, decimals: 3, tick: 0.001, spread: 0.01, leverage: 100,
+      lots: [10000, 50000, 100000, 300000], defaultLot: 10000, minUnit: 10000, maxUnit: 1000000, unit: "枚", lotSize: 10000,
+      scales: { 1: [0.1, 30], 5: [0.2, 26], 60: [0.5, 22], 300: [1, 20] },
+      drift: 0.09, longRevert: 0.0003, noise: 0.02, revert: 0.08,
+      burstProb: 0.01, burstSize: 0.15, jumpProb: 0.0006, jumpMin: 0.4, jumpMax: 1.0,
+      // フラッシュクラッシュ：価格だけが一瞬で飛び、数秒かけて戻る（長いヒゲになる）
+      flashProb: 0.0008, flashMin: 0.6, flashMax: 1.6,
+      limit: 0, floor: 30, volRef: 0.06, spreadCap: 6,
+      orderOffset: 0.3, tpOffset: 0.5, slOffset: 0.3,
+      rateBuy: 0.0001, rateSell: -0.00012, carryLabel: "スワップ",
+      newsUp: [
+        "【速報】ウォルナット中銀、予想外の利上げを発表。",
+        "ウォルナット、殻を破って急騰。売り方の買い戻しが殺到。",
+        "著名投資家「ナッツは絶対に割れない」と発言、WLNTに買いが集まる。"
+      ],
+      newsDown: [
+        "【速報】ウォルナット中銀総裁、会見で「殻はもう限界」と発言。",
+        "WLNT、大口の売りで急落。「中身が空っぽだった」との噂。",
+        "ウォルナット国の格付けが引き下げ。市場に割れる音が響く。"
+      ],
+      newsFlash: [
+        "【急変】WLNT、数秒で急落し長い下ヒゲ。買い方のロスカットを巻き込んだ模様。",
+        "【急変】WLNT、一瞬で急騰し長い上ヒゲ。売り方のロスカットが連鎖した模様。"
+      ]
     }
   };
-  const SYM_KEYS = Object.keys(INSTRUMENTS);
+  // 取引記録（ランキングの log）は銘柄をこの並びの番号で保存する。並びを変えると過去の記録を検証できなくなる
+  const ALL_KEYS = ["crnjpy", "tokiwarp", "wlnt"];
+  let SYM_KEYS = MODE.syms;   // 今のモードで動かす銘柄
   const TFS = [{ label: "1秒", sec: 1 }, { label: "5秒", sec: 5 }, { label: "1分", sec: 60 }, { label: "5分", sec: 300 }];
   const CHART_TYPES = [
     { t: "candle", label: "ローソク足" }, { t: "hollow", label: "中空ローソク足" }, { t: "bar", label: "バー" },
@@ -69,8 +105,13 @@
   const fmtIn = (k, x) => x.toFixed(INSTRUMENTS[k].decimals);
   function fmtYen(n) { return (n < 0 ? "-" : "") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP"); }
   function fmtSYen(n) { return (n > 0 ? "+" : n < 0 ? "-" : "±") + "¥" + Math.abs(Math.round(n)).toLocaleString("ja-JP"); }
-  const fmtQty = (k, u) => u.toLocaleString("ja-JP") + INSTRUMENTS[k].unit;
-  const fmtQtyShort = (k, u) => u >= 10000 ? +(u / 10000).toFixed(1) + "万" + INSTRUMENTS[k].unit : fmtQty(k, u);   // スマホの操作バー用
+  // 数量は内部では通貨数・株数で持ち、「枚」の銘柄だけ表示を枚数に直す
+  const qtyDisp = (k, u) => u / (INSTRUMENTS[k].lotSize || 1);
+  const qtyFromDisp = (k, v) => Math.round(v * (INSTRUMENTS[k].lotSize || 1));
+  const fmtQtyNum = (k, u) => qtyDisp(k, u).toLocaleString("ja-JP");
+  const fmtQty = (k, u) => fmtQtyNum(k, u) + INSTRUMENTS[k].unit;
+  const fmtQtyShort = (k, u) => !INSTRUMENTS[k].lotSize && u >= 10000 ? +(u / 10000).toFixed(1) + "万" + INSTRUMENTS[k].unit : fmtQty(k, u);   // スマホの操作バー用
+  const yenMan = (n) => (n / 10000).toLocaleString("ja-JP") + "万円";
   const dirJ = (d) => (d === "buy" ? "買" : "売");
   function fmtSlip(k, s) {
     return INSTRUMENTS[k].kind === "fx" ? (s * 100).toFixed(1) + "銭" : Math.round(s) + "円";
@@ -83,7 +124,7 @@
 
   // ======================= 価格エンジン =======================
   const engines = {};
-  const SYM_SALT = { crnjpy: 0x9E3779B9, tokiwarp: 0x85EBCA6B };
+  const SYM_SALT = { crnjpy: 0x9E3779B9, tokiwarp: 0x85EBCA6B, wlnt: 0xC2B2AE35 };
   function freshEngine(k, seed) {
     const c = INSTRUMENTS[k];
     return {
@@ -107,26 +148,35 @@
   function limitsOf(k) { const c = INSTRUMENTS[k]; return c.limit ? [c.start - c.limit, c.start + c.limit] : null; }
 
   // 価格を1ステップ進める（st: { price, center, rng }）。ニュースが出たらその文面を返す
+  // ※乱数の呼び出し順を変えると過去の挑戦状・ランキングの検証が合わなくなる。新しい動きは銘柄の設定がある時だけ乱数を使うこと
   function stepPrice(k, st) {
     const c = INSTRUMENTS[k], r = st.rng;
     let news = null;
+    st.flash = false;
     st.center += (r() - 0.5) * c.drift + (c.start - st.center) * c.longRevert;
     if (c.jumpProb && r() < c.jumpProb) {
       const up = r() < 0.5;
       st.center += (up ? 1 : -1) * (c.jumpMin + r() * (c.jumpMax - c.jumpMin));
-      const list = up ? NEWS_UP : NEWS_DOWN;
+      const list = up ? (c.newsUp || NEWS_UP) : (c.newsDown || NEWS_DOWN);
       news = list[Math.floor(r() * list.length)];
     }
     const lim = limitsOf(k);
     if (lim) st.center = clamp(st.center, lim[0], lim[1]);
     const burst = r() < c.burstProb ? (r() - 0.5) * c.burstSize : 0;
     st.price += (st.center - st.price) * c.revert + gaussR(r) * c.noise + burst;
+    if (c.flashProb && r() < c.flashProb) {
+      const down = r() < 0.7;
+      st.price += (down ? -1 : 1) * (c.flashMin + r() * (c.flashMax - c.flashMin));
+      st.flash = true;
+      news = news || c.newsFlash[down ? 0 : 1];
+    }
     st.price = lim ? clamp(st.price, lim[0], lim[1]) : Math.max(c.floor, st.price);
     return news;
   }
   function stepEngine(k, t) {
     const e = engines[k];
     const news = stepPrice(k, e);
+    if (e.flash) e.flashT = t;   // 急変の時刻（ヒゲでのロスカットの判定に使う）
     if (news && !backfilling) newsQueue.push({ at: t + DELAY_MS, text: news });
     const p = e.price;
     e.ticks.push({ t, p });
@@ -178,7 +228,7 @@
       const cut = now - DELAY_MS;
       e.pub = priceAt(k, cut);
       const vol = Math.abs(e.pub - priceAt(k, cut - 1000));
-      const target = 1 + Math.min(4, Math.max(0, (vol / c.volRef - 1) * 1.5));
+      const target = 1 + Math.min((c.spreadCap || 5) - 1, Math.max(0, (vol / c.volRef - 1) * 1.5));
       e.spreadMult += (target - e.spreadMult) * (target > e.spreadMult ? 0.6 : 0.08);
       const lim = limitsOf(k);
       if (lim) {
@@ -217,22 +267,29 @@
   let positions = [];
   let orders = [];
   let seq = 1;
-  const stats = { trades: 0, wins: 0, futureTrades: 0, maxWin: 0, maxLoss: 0 };
+  // wicked：急変（ヒゲ）でロスカットされた / maxHeld：同時に持った最大の数量（ウォルナットの称号用）
+  const stats = { trades: 0, wins: 0, futureTrades: 0, maxWin: 0, maxLoss: 0, wicked: false, maxHeld: 0 };
   const FUTURE_MAX_SEC = 30;      // 未来視点を連続でONにできる最大秒数
   const FUTURE_COOLDOWN_SEC = 60; // OFFになってから再びONにできるまでの秒数
-  let futureState = "ready";      // "ready" | "active" | "cooldown"
+  let futureState = "ready";      // "ready" | "active" | "cooldown" | "spent"（回数を使い切った）
   let futureRemain = FUTURE_MAX_SEC;
+  let futureUsesLeft = MODE.futureUses;
+  let bustNotified = false;       // ウォルナットモードで資金が尽きた案内を出したか
   let futureVisible = false;
   let chartType = "candle";
   const indOn = { ma20: true, ma50: false, bb: false, vol: true };
   const view = { tf: 1, bars: 90, offset: 0 };
   const drawingsBySym = {};
-  SYM_KEYS.forEach(k => { drawingsBySym[k] = []; });
+  ALL_KEYS.forEach(k => { drawingsBySym[k] = []; });
   const order = { type: "market", dir: "buy", qty: {}, tpOn: false, slOn: false };
-  SYM_KEYS.forEach(k => { order.qty[k] = INSTRUMENTS[k].defaultLot; });
+  ALL_KEYS.forEach(k => { order.qty[k] = INSTRUMENTS[k].defaultLot; });
 
   let bestBalance = START_BALANCE;
-  try { const s = window.localStorage.getItem("futurefx_best_v7"); if (s) bestBalance = Math.max(bestBalance, parseFloat(s) || START_BALANCE); } catch (e) {}
+  function loadBest() {
+    bestBalance = START_BALANCE;
+    try { const s = window.localStorage.getItem(MODE.bestKey); if (s) bestBalance = Math.max(bestBalance, parseFloat(s) || START_BALANCE); } catch (e) {}
+  }
+  loadBest();
 
   // ======================= 通知・ニュース =======================
   const toastWrap = $("toastWrap");
@@ -319,6 +376,7 @@
     const margin = requiredMargin(k, units, price);
     if (margin > freeMargin()) { toast("証拠金が不足しているため約定できませんでした", "err"); return false; }
     positions.push({ id: seq++, sym: k, dir, units, entry: price, margin, tp: tp ?? null, sl: sl ?? null, swap: 0, futureOn: futureVisible, om: currentM() });
+    stats.maxHeld = Math.max(stats.maxHeld, positions.reduce((s, p) => s + (p.sym === k ? p.units : 0), 0));
     let msg = `${how} ${dirJ(dir)} ${INSTRUMENTS[k].code} ${fmtQty(k, units)} を ${fmtP(k, price)} で約定`;
     if (slip) msg += `（スリッページ ${fmtSlip(k, slip)}）`;
     toast(msg, dir);
@@ -354,10 +412,15 @@
     roundTrades.push({ k: p.sym, d: p.dir, u: p.units, em: p.om, ep: p.entry, xm: currentM(), xp: exit, sw: p.swap, fut: !!p.futureOn });
     if (balance > bestBalance) {
       bestBalance = balance;
-      try { window.localStorage.setItem("futurefx_best_v7", String(bestBalance)); } catch (e) {}
+      try { window.localStorage.setItem(MODE.bestKey, String(bestBalance)); } catch (e) {}
     }
     sfx(pnl >= 0 ? "win" : "loss");
     toast(`${reason}：${dirJ(p.dir)} ${INSTRUMENTS[p.sym].code} ${fmtQty(p.sym, p.units)} を ${fmtP(p.sym, exit)} で決済 ${fmtSYen(pnl)}`, pnl >= 0 ? "buy" : "sell");
+    // ゼロカット（海外FX業者風）：建玉がなくなった時点で残高がマイナスなら0円に戻す。検証（verifyRound）も同じ規則で計算する
+    if (MODE.zeroCut && balance < 0 && !positions.length) {
+      toast("ゼロカット：マイナス分 " + fmtYen(-balance) + " は業者が負担し、残高は0円になりました", "warn");
+      realized -= balance; balance = 0;
+    }
   }
 
   function closeManual(p) {
@@ -423,14 +486,33 @@
     });
   }
 
+  // ウォルナットモードで建玉も注文もなく、1枚も買えないほど資金が減ったら「退場」。ラウンド中ならその場で終了する
+  function checkBust() {
+    if (MODE.key !== "walnut" || positions.length || orders.length) return;
+    const k = "wlnt";
+    if (freeMargin() >= requiredMargin(k, INSTRUMENTS[k].minUnit, askOf(k))) return;
+    if (challenge && !challengeOver) {
+      endChallenge(); sfx("end");
+      toast("資金が尽きたため、ラウンドを終了しました（退場）", "err");
+    } else if (!challenge && !bustNotified) {
+      bustNotified = true;
+      toast("資金が尽きて退場です。「資産をリセット」でやり直せます", "err");
+    }
+  }
   function checkLosscut() {
     const um = usedMargin();
     if (um <= 0) return;
-    if ((balance + floatingTotal()) / um < 0.5) {
+    if ((balance + floatingTotal()) / um < MODE.losscut) {
+      // 直前（みんなに見えている価格で6秒以内）に急変があれば「ヒゲで刈られた」扱い
+      const cut = Date.now() - DELAY_MS;
+      if (positions.some(p => { const ft = engines[p.sym].flashT; return ft !== undefined && ft <= cut && ft > cut - 6000; })) stats.wicked = true;
       positions.slice().forEach(p => closeAt(p, exitPriceOf(p), "ロスカット"));
       renderPositions();
-      pushNews("【ロスカット】証拠金維持率が50%を割り込み、全建玉が強制決済されました。未来は見えていたはずですが…");
-      toast("証拠金維持率が50%を下回ったため、ロスカットされました", "err");
+      const pct = Math.round(MODE.losscut * 100) + "%";
+      pushNews(stats.wicked && MODE.key === "walnut"
+        ? "【ロスカット】WLNTの急変で証拠金維持率が" + pct + "を割り込み、全建玉が強制決済されました。くるみは割れるものです。"
+        : "【ロスカット】証拠金維持率が" + pct + "を割り込み、全建玉が強制決済されました。未来は見えていたはずですが…");
+      toast("証拠金維持率が" + pct + "を下回ったため、ロスカットされました", "err");
     }
   }
 
@@ -449,7 +531,7 @@
       if (p.sl !== null) brk += '<span>損 ' + fmtP(p.sym, p.sl) + '<span class="x" data-clear="sl">×</span></span>';
       tr.innerHTML =
         "<td>" + symCell(p.sym, p.dir) + "</td>" +
-        '<td class="mono">' + p.units.toLocaleString("ja-JP") + "</td>" +
+        '<td class="mono">' + fmtQtyNum(p.sym, p.units) + "</td>" +
         '<td class="mono">' + fmtP(p.sym, p.entry) + (brk ? '<span class="brk mono">' + brk + "</span>" : "") + "</td>" +
         '<td class="mono" data-pnl="' + p.id + '">¥0</td><td></td>';
       tr.querySelectorAll("[data-clear]").forEach(x => x.addEventListener("click", () => {
@@ -470,7 +552,7 @@
       tr.innerHTML =
         "<td>" + symCell(o.sym, o.dir) + "</td>" +
         "<td>" + (o.type === "limit" ? "指値" : "逆指値") + "</td>" +
-        '<td class="mono">' + o.units.toLocaleString("ja-JP") + "</td>" +
+        '<td class="mono">' + fmtQtyNum(o.sym, o.units) + "</td>" +
         '<td class="mono">' + fmtP(o.sym, o.price) + "</td><td></td>";
       const b = document.createElement("button");
       b.className = "mini-btn"; b.textContent = "取消";
@@ -496,7 +578,7 @@
     const tr = document.createElement("tr");
     tr.innerHTML =
       "<td>" + symCell(p.sym, p.dir) + "</td>" +
-      '<td class="mono">' + p.units.toLocaleString("ja-JP") + "</td>" +
+      '<td class="mono">' + fmtQtyNum(p.sym, p.units) + "</td>" +
       '<td class="mono">' + fmtP(p.sym, p.entry) + "→" + fmtP(p.sym, exit) + "</td>" +
       '<td class="mono ' + (pnl >= 0 ? "pos" : "neg") + '">' + fmtSYen(pnl) + '<span class="reason">' + reason + "</span></td>";
     historyBody.prepend(tr);
@@ -540,7 +622,7 @@
       const b = document.createElement("button");
       b.className = "lot-btn" + (u === order.qty[k] ? " active" : "");
       b.textContent = fmtQty(k, u);
-      b.addEventListener("click", () => { order.qty[k] = u; qtyInput.value = u; renderLots(); updateOrderPanel(); });
+      b.addEventListener("click", () => { order.qty[k] = u; qtyInput.value = qtyDisp(k, u); renderLots(); updateOrderPanel(); });
       row.appendChild(b);
     });
   }
@@ -568,7 +650,7 @@
   $("btnDirSell").addEventListener("click", () => setDirection("sell"));
   qtyInput.addEventListener("input", () => {
     const v = parseInt(qtyInput.value, 10);
-    if (isFinite(v)) order.qty[currentSym] = v;
+    if (isFinite(v)) order.qty[currentSym] = qtyFromDisp(currentSym, v);
     renderLots(); updateOrderPanel();
   });
   [priceInput, tpInput, slInput].forEach(i => i.addEventListener("input", updateOrderPanel));
@@ -587,6 +669,7 @@
     $("marginLabel").textContent = fmtYen(m);
     const free = freeMargin();
     $("freeMarginLabel").textContent = fmtYen(free);
+    $("perYenLabel").textContent = "±" + fmtYen(units || 0);   // 1円動いたときの損益（数量×1円）
     const s = order.dir === "buy" ? 1 : -1;
     const parts = [];
     const tp = parseFloat(tpInput.value), sl = parseFloat(slInput.value);
@@ -636,7 +719,8 @@
   function resetAccount() {
     roundTrades.length = 0;
     balance = START_BALANCE; realized = 0; positions = []; orders = [];
-    Object.assign(stats, { trades: 0, wins: 0, futureTrades: 0, maxWin: 0, maxLoss: 0 });
+    Object.assign(stats, { trades: 0, wins: 0, futureTrades: 0, maxWin: 0, maxLoss: 0, wicked: false, maxHeld: 0 });
+    bustNotified = false;
     resetHistory(); renderPositions(); updateOrderPanel();
   }
   // 中断・リセットなど取り消せない操作は、3秒以内にもう一度押したときだけ実行する（誤操作防止）
@@ -655,10 +739,11 @@
       if (!challengeOver && !armed("もう一度押すと、同じ相場で最初から挑戦し直します")) return;
       startChallenge(challenge); toast("同じ相場で、最初から挑戦し直します", "warn"); return;
     }
-    if (!armed("もう一度押すと資産を100万円にリセットします（建玉・注文・成績は消えます）")) return;
+    if (!armed("もう一度押すと資産を" + yenMan(START_BALANCE) + "にリセットします（建玉・注文・成績は消えます）")) return;
     resetAccount();
+    if (MODE.futureUses !== Infinity) resetAbility();   // ウォルナットモードの未来視点（1回）はリセットで戻る
     roundStartM = currentM();   // 挑戦状URLは、ここから先のプレイ区間で作られる
-    toast("資産を100万円にリセットしました", "warn");
+    toast("資産を" + yenMan(START_BALANCE) + "にリセットしました", "warn");
   });
 
   // ======================= 板（株のみ） =======================
@@ -712,13 +797,25 @@
   [["moreReset", "resetBtn"], ["moreSound", "soundBtn"], ["moreHelp", "helpBtn"]].forEach(([m, t]) =>
     $(m).addEventListener("click", () => { moreMenu.classList.remove("open"); $(t).click(); }));
 
-  SYM_KEYS.forEach(k => {
-    const c = INSTRUMENTS[k];
-    const b = document.createElement("button");
-    b.className = "dd-item"; b.dataset.sym = k;
-    b.innerHTML = '<span class="mono">' + c.code + "</span> " + c.name + '<span class="sub">' + (c.kind === "fx" ? "FX" : "株・荒い") + "</span>";
-    b.addEventListener("click", () => { switchSymbol(k); symMenu.classList.remove("open"); });
-    symMenu.appendChild(b);
+  // 銘柄メニュー：モードごとに見出しを付けて並べる。別のモードの銘柄を選ぶと、モード切り替えの確認を出す
+  Object.values(MODES).forEach(md => {
+    const h = document.createElement("div");
+    h.className = "dd-head" + (md.key === "walnut" ? " wn" : "");
+    h.textContent = md.key === "walnut" ? "ウォルナットモード（軍資金30万円・100倍）" : "通常モード（軍資金100万円）";
+    symMenu.appendChild(h);
+    md.syms.forEach(k => {
+      const c = INSTRUMENTS[k];
+      const b = document.createElement("button");
+      b.className = "dd-item"; b.dataset.sym = k;
+      b.innerHTML = '<span class="mono">' + c.code + "</span> " + c.name + '<span class="sub">' + (k === "wlnt" ? "FX・激荒" : c.kind === "fx" ? "FX" : "株・荒い") + "</span>";
+      b.addEventListener("click", () => {
+        symMenu.classList.remove("open");
+        if (md === MODE) { switchSymbol(k); return; }
+        if (challenge) { toast("タイムアタック・挑戦状の途中はモードを切り替えられません", "err"); return; }
+        openModeModal(md.key);
+      });
+      symMenu.appendChild(b);
+    });
   });
   $("symBtn").addEventListener("click", (e) => toggleMenu(symMenu, e));
 
@@ -763,25 +860,33 @@
   });
 
   function updateFutureButton() {
-    const html = '<span class="dot"></span>' + (futureState === "ready" ? "未来視点を使う"
+    const limited = MODE.futureUses !== Infinity;
+    const html = '<span class="dot"></span>' + (futureState === "ready" ? (limited ? "未来視点（あと" + futureUsesLeft + "回）" : "未来視点を使う")
       : futureState === "active" ? "未来視点 ON（残り" + Math.ceil(futureRemain) + "秒）"
+      : futureState === "spent" ? "未来視点（使用済）"
       : "クールダウン " + Math.ceil(futureRemain) + "秒");
     ["futureToggle", "mFuture"].forEach(id => {   // 上部のボタンと、スマホの操作バーのボタン
       const b = $(id);
-      b.disabled = futureState === "cooldown";
+      b.disabled = futureState === "cooldown" || futureState === "spent";
       b.classList.toggle("off", futureState !== "active");
       if (b.innerHTML !== html) b.innerHTML = html;
     });
   }
   function endFutureView() {
-    futureState = "cooldown"; futureVisible = false; futureRemain = FUTURE_COOLDOWN_SEC;
+    futureVisible = false;
+    if (futureUsesLeft <= 0) { futureState = "spent"; futureRemain = 0; }
+    else { futureState = "cooldown"; futureRemain = FUTURE_COOLDOWN_SEC; }
     renderLegend(); updateFutureButton(); requestDraw();
   }
   function tickFutureAbility(dt) {
     const sec = dt / 1000;
     if (futureState === "active") {
       futureRemain -= sec;
-      if (futureRemain <= 0) { endFutureView(); toast("未来視点の残り時間が切れました。" + FUTURE_COOLDOWN_SEC + "秒のクールダウンに入ります", "warn"); return; }
+      if (futureRemain <= 0) {
+        endFutureView();
+        toast(futureState === "spent" ? "未来視点の残り時間が切れました。このラウンドではもう使えません" : "未来視点の残り時間が切れました。" + FUTURE_COOLDOWN_SEC + "秒のクールダウンに入ります", "warn");
+        return;
+      }
     } else if (futureState === "cooldown") {
       futureRemain -= sec;
       if (futureRemain <= 0) { futureState = "ready"; futureRemain = FUTURE_MAX_SEC; toast("未来視点が再び使えるようになりました", "buy"); }
@@ -792,7 +897,7 @@
   $("futureToggle").addEventListener("click", () => {
     stopCoach();
     if (futureState === "ready") {
-      futureState = "active"; futureVisible = true; futureRemain = FUTURE_MAX_SEC;
+      futureState = "active"; futureVisible = true; futureRemain = FUTURE_MAX_SEC; futureUsesLeft--;
       sfx("ability");
       renderLegend(); updateFutureButton(); requestDraw();
     } else if (futureState === "active") {
@@ -818,8 +923,8 @@
     $("orderTitle").textContent = "新規注文 · " + c.name;
     $("leverageLabel").textContent = c.leverage + "倍";
     $("qtyUnit").textContent = c.unit;
-    qtyInput.step = c.minUnit;
-    qtyInput.value = order.qty[k];
+    qtyInput.step = qtyDisp(k, c.minUnit);
+    qtyInput.value = qtyDisp(k, order.qty[k]);
     [priceInput, tpInput, slInput].forEach(i => { i.step = c.tick; });
     symMenu.querySelectorAll(".dd-item").forEach(b => b.classList.toggle("active", b.dataset.sym === k));
     pendingPoint = null;
@@ -833,6 +938,38 @@
     renderBoard();
     requestDraw();
   }
+
+  // ======================= ゲームモード =======================
+  // モードを切り替える（相場の作り直し・口座のリセットは呼び出し側で行う）
+  function setMode(key) {
+    MODE = MODES[key] || MODES.normal;
+    SYM_KEYS = MODE.syms;
+    START_BALANCE = MODE.balance;
+    loadBest();
+    document.body.classList.toggle("walnut", MODE.key === "walnut");
+    if (!SYM_KEYS.includes(currentSym)) currentSym = SYM_KEYS[0];
+  }
+  let pendingMode = null;
+  function openModeModal(key) {
+    pendingMode = key;
+    $("modeWalnutBody").hidden = key !== "walnut";
+    $("modeNormalBody").hidden = key === "walnut";
+    $("modeModal").hidden = false;
+  }
+  // フリープレイのままモードを切り替える（新しい相場・資産リセット）
+  function switchMode(key) {
+    setMode(key);
+    initMarket(randomSeed(), 0);
+    roundStartM = 0;
+    resetAccount();
+    resetAbility();
+    view.offset = 0;
+    switchSymbol(SYM_KEYS[0]);
+    renderPositions();
+    toast(MODE.key === "walnut" ? "ウォルナットモード開始！軍資金30万円・レバレッジ100倍です" : "通常モードに戻りました（軍資金100万円）", "warn");
+  }
+  $("modeStart").addEventListener("click", () => { $("modeModal").hidden = true; if (pendingMode && !challenge) switchMode(pendingMode); });
+  $("modeCancel").addEventListener("click", () => { $("modeModal").hidden = true; });
 
   // ======================= 描画ツール =======================
   let activeTool = "cursor";
@@ -1396,6 +1533,15 @@
     if (ret > -20) return "未来に裏切られた人";
     return "未来が見えても溶かす人";
   }
+  // ウォルナットモードの称号（くるみ＝walnut にちなんだものを優先）
+  function rankFor(equity, ret, trades) {
+    if (MODE.key === "walnut") {
+      if (stats.wicked) return "割られたくるみ";
+      if (trades > 0 && equity < requiredMargin("wlnt", INSTRUMENTS.wlnt.minUnit, INSTRUMENTS.wlnt.start)) return "退場";
+      if (stats.maxHeld >= 300000 && ret > 0) return "30枚の覚悟";
+    }
+    return rankOf(ret, trades);
+  }
   // ======================= 成績シェア =======================
   // 成績カード：終わったラウンドがあればその成績、なければフリープレイの現在の成績
   function currentCard() {
@@ -1403,12 +1549,13 @@
     const equity = balance + floatingTotal(), diff = equity - START_BALANCE, ret = (diff / START_BALANCE) * 100;
     const winRate = stats.trades ? Math.round((stats.wins / stats.trades) * 100) : 0;
     const futureRate = stats.trades ? Math.round((stats.futureTrades / stats.trades) * 100) : 0;
-    return { mode: "free", nickname, equity, ret, trades: stats.trades, winRate, futureRate, rank: rankOf(ret, stats.trades + positions.length) };
+    return { mode: "free", game: MODE.key, nickname, equity, ret, trades: stats.trades, winRate, futureRate, rank: rankFor(equity, ret, stats.trades + positions.length) };
   }
   function modeLabel(card) {
-    if (card.mode === "ta") return "5分タイムアタック";
-    if (card.mode === "chal") return "vs " + challenge.n + "（挑戦状）";
-    return "フリープレイ";
+    const pre = card.game === "walnut" ? "ウォルナット・" : "";
+    if (card.mode === "ta") return pre + "5分タイムアタック";
+    if (card.mode === "chal") return pre + "vs " + challenge.n + "（挑戦状）";
+    return pre + "フリープレイ";
   }
   let shareCard = null;
   function openShare() {
@@ -1433,6 +1580,7 @@
     let head = (nickname || "名無しの未来人") + "の成績（" + modeLabel(card) + "）";
     let line1;
     if (card.mode === "free" && card.trades === 0 && !positions.length) line1 = "30秒先の未来が見えるのに、1回も取引しませんでした。";
+    else if (card.game === "walnut") line1 = "レバレッジ100倍・未来視点は1回だけのウォルナットモードで、30万円 → " + fmtYen(card.equity) + "（" + (diff >= 0 ? "+" : "") + card.ret.toFixed(2) + "%）";
     else if (diff >= 0) line1 = "30秒先の未来が見えるトレードで、100万円 → " + fmtYen(card.equity) + "（+" + card.ret.toFixed(2) + "%）";
     else line1 = "30秒先の未来が見えていたのに、100万円 → " + fmtYen(card.equity) + "（" + card.ret.toFixed(2) + "%）";
     if (card.mode === "chal") {
@@ -1584,14 +1732,14 @@
   // ======================= 成績の検証（ランキング用） =======================
   // 取引記録を短い文字列にする： 銘柄,売買,数量,建て時刻,建値,決済時刻,決済値,スワップ ; ...
   function encodeLog(trades) {
-    return trades.map(t => [SYM_KEYS.indexOf(t.k), t.d === "buy" ? "b" : "s", t.u, Math.round(t.em), fmtIn(t.k, t.ep),
+    return trades.map(t => [ALL_KEYS.indexOf(t.k), t.d === "buy" ? "b" : "s", t.u, Math.round(t.em), fmtIn(t.k, t.ep),
       Math.round(t.xm), fmtIn(t.k, t.xp), (Math.round(t.sw * 100) / 100)].join(",")).join(";");
   }
   function decodeLog(str) {
     if (typeof str !== "string" || !str) return [];
     return str.split(";").map(rec => {
       const f = rec.split(",");
-      const k = SYM_KEYS[parseInt(f[0], 10)];
+      const k = ALL_KEYS[parseInt(f[0], 10)];
       if (f.length !== 8 || !k || (f[1] !== "b" && f[1] !== "s")) throw new Error("bad record");
       const n = f.slice(2).map(Number);
       if (n.some(v => !Number.isFinite(v))) throw new Error("bad number");
@@ -1599,13 +1747,16 @@
     });
   }
   // シード値から相場を作り直し、各取引の価格がその時点の相場と一致するか、損益の合計が最終資産と合うかを調べる
-  function verifyRound(seed, equity, logStr) {
+  // game：どのモードのランキングの記録か（モードで銘柄・軍資金・ゼロカットの有無が変わる）
+  function verifyRound(seed, equity, logStr, game) {
+    const md = MODES[game] || MODES.normal;
     let trades;
     try { trades = decodeLog(logStr); } catch (e) { return { ok: false, msg: "取引記録の形式が不正です" }; }
     if (trades.length > 400) return { ok: false, msg: "取引記録が多すぎます" };
+    if (trades.some(t => !md.syms.includes(t.k))) return { ok: false, msg: "このモードにない銘柄の取引が含まれています" };
     const from = -DELAY_MS - 2000, to = TA_MS + 2000;
     const series = {};
-    SYM_KEYS.forEach(k => {
+    md.syms.forEach(k => {
       const c = INSTRUMENTS[k];
       const st = { price: c.start, center: c.start, rng: mulberry32(((seed >>> 0) ^ (SYM_SALT[k] || 0)) >>> 0) };
       const arr = [];
@@ -1625,17 +1776,20 @@
       for (let mm = m - 800; mm <= m; mm += TICK_MS) best = Math.min(best, Math.abs(price - pubAt(k, mm)));
       return best;
     };
-    let total = START_BALANCE;
+    let total = md.balance;
     for (let i = 0; i < trades.length; i++) {
       const t = trades[i], c = INSTRUMENTS[t.k], no = "取引" + (i + 1) + "件目";
       if (t.em < 0 || t.xm < t.em || t.xm > TA_MS + 2000) return { ok: false, msg: no + "の時刻が5分間の範囲外です" };
       if (t.u < c.minUnit || t.u > c.maxUnit || t.u % c.minUnit !== 0) return { ok: false, msg: no + "の数量が不正です" };
-      const tol = c.spread * 4.5 + c.tick;
+      // 許容差＝スプレッドが最大まで広がったときの半分＋スリッページの最大＋余裕（通常の銘柄はスプレッド×4.5）
+      const cap = c.spreadCap || 5, tol = c.spread * (cap / 2 + (cap - 1) * 0.4 + 0.4) + c.tick;
       if (near(t.k, t.em, t.ep) > tol) return { ok: false, msg: no + "の建値が、その時点の相場と一致しません" };
       if (near(t.k, t.xm, t.xp) > tol) return { ok: false, msg: no + "の決済値が、その時点の相場と一致しません" };
       const carryMax = t.u * t.ep * 0.0002 * Math.max(1, t.xm - t.em) / 86400000 + 1;
       if (Math.abs(t.sw) > carryMax) return { ok: false, msg: no + "のスワップ・金利が不自然です" };
       total += (t.xp - t.ep) * t.u * (t.d === "buy" ? 1 : -1) + t.sw;
+      // ゼロカット：この決済で建玉がなくなり（後の取引で、この時点までに建てたものがない）残高がマイナスなら0円に戻す
+      if (md.zeroCut && total < 0 && !trades.slice(i + 1).some(u => u.em <= t.xm)) total = 0;
     }
     if (Math.abs(total - equity) > 2 + trades.length * 0.5) return { ok: false, msg: "取引の損益合計（" + fmtYen(total) + "）と最終資産が一致しません" };
     return { ok: true, msg: "取引" + trades.length + "件がすべて相場と一致し、損益の合計も最終資産と合っています" };
@@ -1660,7 +1814,7 @@
     try {
       const api = await waitRankingReady();
       const res = await api.submitBest(lastRound);
-      if (res.tooHigh) { note.textContent = "記録が上限（" + fmtYen(api.EQUITY_CAP) + "）を超えているため登録できません"; lastRound.submitted = true; return; }
+      if (res.tooHigh) { note.textContent = "記録が上限（" + fmtYen(res.cap || api.EQUITY_CAP) + "）を超えているため登録できません"; lastRound.submitted = true; return; }
       const parts = [], order = ["day", "week", "all"];
       let anyOk = false, anyErr = false, rateLimited = false;
       order.forEach(p => {
@@ -1683,7 +1837,7 @@
     }
   });
 
-  function renderRankRows(rows) {
+  function renderRankRows(rows, game) {
     const body = $("rankBody");
     if (!rows.length) { body.innerHTML = '<tr><td class="empty-row" colspan="6">まだ登録がありません。最初の1件になってみませんか？</td></tr>'; return; }
     body.innerHTML = "";
@@ -1707,7 +1861,7 @@
         b.addEventListener("click", () => {
           b.textContent = "…";
           setTimeout(() => {
-            const v = verifyRound(r.seed, equity, r.log);
+            const v = verifyRound(r.seed, equity, r.log, game);
             b.textContent = v.ok ? "✓ 本物" : "✗ 不一致";
             b.className = "vfy " + (v.ok ? "ok" : "ng");
             b.title = v.msg;
@@ -1721,17 +1875,21 @@
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   let rankPeriod = "day";
+  let rankGame = "normal";   // どのモードのランキングを表示しているか
   let rankReq = 0;   // タブを素早く切り替えたとき、前のタブの遅れて届いた結果で上書きしないための通し番号
   async function openRanking() {
     const req = ++rankReq;
     $("rankModal").hidden = false;
     $("rankTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.p === rankPeriod));
+    $("rankModeTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.g === rankGame));
+    $("rankTitle").textContent = rankGame === "walnut" ? "🏆 ウォルナット 5分タイムアタック ランキング" : "🏆 5分タイムアタック ランキング";
     $("rankBody").innerHTML = '<tr><td class="empty-row" colspan="6">読み込み中…</td></tr>';
     try {
       const api = await waitRankingReady();
-      const rows = await api.fetchTop(rankPeriod, 20);
+      const game = rankGame;
+      const rows = await api.fetchTop(rankPeriod, 20, game);
       if (req !== rankReq) return;
-      renderRankRows(rows);
+      renderRankRows(rows, game);
     } catch (e) {
       if (req !== rankReq) return;
       $("rankBody").innerHTML = '<tr><td class="empty-row" colspan="6">読み込みに失敗しました（時間をおいて「更新」をお試しください）</td></tr>';
@@ -1739,7 +1897,8 @@
     }
   }
   $("rankTabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { rankPeriod = b.dataset.p; openRanking(); }));
-  $("rankBtn").addEventListener("click", openRanking);
+  $("rankModeTabs").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { rankGame = b.dataset.g; openRanking(); }));
+  $("rankBtn").addEventListener("click", () => { rankGame = MODE.key; openRanking(); });   // 今遊んでいるモードのランキングを開く
   $("rankRefreshBtn").addEventListener("click", openRanking);
   $("rankClose").addEventListener("click", () => { $("rankModal").hidden = true; });
   $("rankModal").addEventListener("click", (e) => { if (e.target.id === "rankModal") $("rankModal").hidden = true; });
@@ -1790,7 +1949,9 @@
     if (!m) return null;
     try {
       const o = JSON.parse(b64urlDecode(m[1]));
-      const ok = o && o.v === 3 &&
+      // v3＝通常モード（従来の形式）、v4＝モードつき（g: "w" でウォルナット）。古いページがv4を通常モードと取り違えないよう版を分ける
+      const game = o && o.v === 4 && o.g === "w" ? "walnut" : "normal";
+      const ok = o && (o.v === 3 || (o.v === 4 && o.g === "w")) &&
         Number.isInteger(o.s) && o.s >= 0 && o.s <= 4294967295 &&
         Number.isFinite(o.a) && Number.isFinite(o.b) &&
         o.a >= 0 && o.a <= 24 * 3600 * 1000 && Math.abs((o.b - o.a) - TA_MS) < TICK_MS;   // 5分勝負のみ受け付ける
@@ -1798,11 +1959,12 @@
       const eq = Number(o.e);
       return {
         mode: "chal",
+        game,
         s: o.s >>> 0,
         a: Math.round(o.a / TICK_MS) * TICK_MS,
         b: Math.round(o.a / TICK_MS) * TICK_MS + TA_MS,
         n: sanitizeNickname(String(o.n || "")) || "名無しの未来人",
-        e: Number.isFinite(eq) ? clamp(eq, 0, 1e10) : START_BALANCE,
+        e: Number.isFinite(eq) ? clamp(eq, 0, 1e10) : MODES[game].balance,
         t: Number.isInteger(o.t) ? clamp(o.t, 0, 100000) : 0
       };
     } catch (err) { return null; }
@@ -1816,7 +1978,8 @@
   }
   function buildChallengeUrl(equity) {
     const range = challenge ? { a: challenge.a, b: challenge.b } : { a: roundStartM, b: currentM() };
-    const payload = { v: 3, s: marketSeed, a: Math.round(range.a), b: Math.round(range.b), n: nickname || "", e: Math.round(equity), t: stats.trades };
+    const payload = MODE.key === "walnut" ? { v: 4, g: "w", s: marketSeed } : { v: 3, s: marketSeed };
+    Object.assign(payload, { a: Math.round(range.a), b: Math.round(range.b), n: nickname || "", e: Math.round(equity), t: stats.trades });
     return shareBaseUrl() + "#c=" + b64urlEncode(JSON.stringify(payload));
   }
   function fmtDur(ms) {
@@ -1830,16 +1993,17 @@
     return (mm ? mm + "分" : "") + (ss || !mm ? ss + "秒" : "");
   }
   function resetAbility() {
-    futureState = "ready"; futureRemain = FUTURE_MAX_SEC; futureVisible = false;
+    futureState = "ready"; futureRemain = FUTURE_MAX_SEC; futureVisible = false; futureUsesLeft = MODE.futureUses;
     renderLegend(); updateFutureButton();
   }
 
   function showChallengeIntro(ch) {
     $("chalFrom").textContent = ch.n;
     $("chalEquity").textContent = fmtYen(ch.e);
-    const diff = ch.e - START_BALANCE;
+    const base = MODES[ch.game].balance, diff = ch.e - base;
     const ret = $("chalRet");
-    ret.textContent = fmtSYen(diff) + "（" + (diff >= 0 ? "+" : "") + ((diff / START_BALANCE) * 100).toFixed(2) + "%）";
+    ret.textContent = fmtSYen(diff) + "（" + (diff >= 0 ? "+" : "") + ((diff / base) * 100).toFixed(2) + "%）";
+    $("chalMode").hidden = ch.game !== "walnut";
     ret.className = "mono " + (diff >= 0 ? "pos" : "neg");
     $("chalDur").textContent = fmtDurJ(ch.b - ch.a);
     $("chalModal").hidden = false;
@@ -1847,10 +2011,13 @@
     $("chalDecline").onclick = () => { $("chalModal").hidden = true; exitChallenge(); };
   }
   function startChallenge(ch) {
+    const switched = ch.game !== MODE.key;
+    if (switched) setMode(ch.game);
     challenge = ch;
     challengeOver = false;
     lastRound = null;
     initMarket(ch.s, ch.a);
+    if (switched) switchSymbol(SYM_KEYS[0]);
     roundStartM = ch.a;
     resetAccount();
     resetAbility();
@@ -1862,8 +2029,8 @@
   }
   // 新しいランダム相場で5分タイムアタックを始める
   function startTimeAttack() {
-    startChallenge({ mode: "ta", s: randomSeed(), a: 0, b: TA_MS, n: null, e: null, t: 0 });
-    toast("5分タイムアタック開始！", "warn");
+    startChallenge({ mode: "ta", game: MODE.key, s: randomSeed(), a: 0, b: TA_MS, n: null, e: null, t: 0 });
+    toast(MODE.key === "walnut" ? "ウォルナット 5分タイムアタック開始！" : "5分タイムアタック開始！", "warn");
   }
   function exitChallenge() {
     challenge = null;
@@ -1902,7 +2069,7 @@
     const equity = balance, diff = equity - START_BALANCE, ret = (diff / START_BALANCE) * 100;
     const winRate = stats.trades ? Math.round((stats.wins / stats.trades) * 100) : 0;
     const futureRate = stats.trades ? Math.round((stats.futureTrades / stats.trades) * 100) : 0;
-    return { nickname, equity, ret, trades: stats.trades, winRate, futureRate, rank: rankOf(ret, stats.trades) };
+    return { game: MODE.key, nickname, equity, ret, trades: stats.trades, winRate, futureRate, rank: rankFor(equity, ret, stats.trades) };
   }
   function endChallenge() {
     challengeOver = true;
@@ -1929,7 +2096,9 @@
       tr.textContent = fmtSYen(diffTA) + "（" + (r.ret >= 0 ? "+" : "") + r.ret.toFixed(2) + "%）";
       tr.className = "mono " + (diffTA >= 0 ? "pos" : "neg");
       $("taSub").textContent = "決済" + r.trades + "回・勝率" + (r.trades ? r.winRate + "%" : "-") + "・称号「" + r.rank + "」";
-      $("chalResultMsg").textContent = diffTA > 0 ? "未来を味方につけられたようです。ランキングに登録して、挑戦状で友達にも勝負を挑んでみましょう。"
+      $("chalResultMsg").textContent = r.rank === "割られたくるみ" ? "急変のヒゲでロスカットされました。未来が見えない時間に大きく張ると、くるみは簡単に割れます。"
+        : r.rank === "退場" ? "資金が尽きて退場となりました。レバレッジ100倍では、1円の逆行が命取りです。"
+        : diffTA > 0 ? "未来を味方につけられたようです。ランキングに登録して、挑戦状で友達にも勝負を挑んでみましょう。"
         : "未来が見えていても、勝つのは簡単ではないようです。同じ相場の挑戦状を送って、友達ならどうなるか試してみましょう。";
       $("chalResultModal").hidden = false;
       requestAnimationFrame(renderReplay);
@@ -1968,7 +2137,18 @@
   renderSoundBtn();
 
   // ======================= タイムアタック開始 =======================
-  $("taBtn").addEventListener("click", () => { if (!challenge) $("taModal").hidden = false; });
+  $("taBtn").addEventListener("click", () => {
+    if (challenge) return;
+    const wn = MODE.key === "walnut";
+    $("taBadge").textContent = wn ? "⏱ ウォルナット 5分タイムアタック" : "⏱ 5分タイムアタック";
+    $("taLi1").textContent = wn ? "軍資金30万円・レバレッジ100倍で、5分後の最終資産で勝負します。時間になると自動で全決済されます。"
+      : "軍資金100万円から、5分後の最終資産で勝負します。時間になると自動で全決済されます。";
+    $("taLi2").textContent = wn ? "未来視点（30秒）は1回だけ。証拠金維持率20%でロスカット、残高がマイナスになってもゼロカットで0円に戻ります。"
+      : "未来視点（30秒・クールダウン60秒）は、5分間で最大4回使えます。";
+    $("taLi3").textContent = wn ? "終了後、成績をウォルナット専用のランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。"
+      : "終了後、成績をランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。";
+    $("taModal").hidden = false;
+  });
   $("taStart").addEventListener("click", () => { $("taModal").hidden = true; startTimeAttack(); });
   $("taCancel").addEventListener("click", () => { $("taModal").hidden = true; });
 
@@ -2031,6 +2211,7 @@
     accrueCarry(dt);
     processTriggers();
     checkLosscut();
+    checkBust();
 
     const k = currentSym, c = INSTRUMENTS[k], e = engines[k];
     $("bidBox").textContent = fmtP(k, bidOf(k));
@@ -2057,6 +2238,8 @@
   // 起動時：挑戦状URLがあればその相場を、なければ新しいランダム相場を生成
   const incoming = parseChallenge();
   if (incoming) {
+    setMode(incoming.game);
+    balance = START_BALANCE;
     initMarket(incoming.s, incoming.a);
     roundStartM = incoming.a;
     showChallengeIntro(incoming);
@@ -2075,7 +2258,7 @@
   updateFutureButton();
   resetHistory();
   setDirection("buy");
-  switchSymbol("crnjpy");
+  switchSymbol(SYM_KEYS[0]);
   renderPositions();
   resizeCanvas();
   setInterval(tick, TICK_MS);

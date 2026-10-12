@@ -13,25 +13,28 @@ const root = new URL("../../", import.meta.url);
 const rules = readFileSync(new URL("firestore.rules", root), "utf8");
 const rankingSrc = readFileSync(new URL("ranking.js", root), "utf8");
 
-// ranking.js から JST 定数と periodCollection() を取り出す
+// ranking.js から EQUITY_CAP・GAMES・JST 定数と periodCollection() を取り出す
+const capLine = rankingSrc.match(/^const EQUITY_CAP = .*$/m);
+const gamesSrc = rankingSrc.match(/^const GAMES = \{[\s\S]*?^\};$/m);
 const jstLine = rankingSrc.match(/^const JST = .*;$/m);
-const fnSrc = rankingSrc.match(/^function periodCollection\(period\) \{[\s\S]*?^\}$/m);
-assert.ok(jstLine && fnSrc, "ranking.js の periodCollection() が見つかりません");
-const clientPeriodCollection = new Function(jstLine[0] + "\n" + fnSrc[0] + "\nreturn periodCollection;")();
-const EQUITY_CAP = Number(rankingSrc.match(/^const EQUITY_CAP = (\d+);/m)[1]);
+const fnSrc = rankingSrc.match(/^function periodCollection\(period, game\) \{[\s\S]*?^\}$/m);
+assert.ok(capLine && gamesSrc && jstLine && fnSrc, "ranking.js の periodCollection() / GAMES が見つかりません");
+const [clientPeriodCollection, GAMES] = new Function([capLine[0], gamesSrc[0], jstLine[0], fnSrc[0]].join("\n") + "\nreturn [periodCollection, GAMES];")();
+const EQUITY_CAP = GAMES.normal.cap;
+const WN_CAP = GAMES.walnut.cap;
 
 // 指定時刻でのコレクション名（Date.now を一時的に差し替えてクライアントの関数を呼ぶ）
-function colAt(period, ms) {
+function colAt(period, ms, game) {
   const real = Date.now;
   Date.now = () => ms;
-  try { return clientPeriodCollection(period); } finally { Date.now = real; }
+  try { return clientPeriodCollection(period, game); } finally { Date.now = real; }
 }
 
-// ranking.js の submitBest() が送るのと同じ形のデータ
-function record(equity, over = {}) {
+// ranking.js の submitBest() が送るのと同じ形のデータ（base：軍資金。ウォルナットは30万円）
+function record(equity, over = {}, base = 1000000) {
   return Object.assign({
     nickname: "ルールテスト", equity,
-    ret: Math.round((equity - 1000000) / 10000 * 100) / 100,
+    ret: Math.round((equity - base) / (base / 100) * 100) / 100,
     trades: 3, winRate: 67, futureRate: 40, rank: "見習い未来人",
     seed: 123456789, log: "crnjpy,b,10000,1000,88.4,2000,88.5,0",
     ts: serverTimestamp()
@@ -142,6 +145,39 @@ test("更新：自己ベスト更新かつ前回から60秒以上あいたとき
   await assertFails(setDoc(doc(alice(), path), record(1300000)));
   await seed("ta5/bob", Object.assign(record(1000000), { ts: old }));
   await assertFails(setDoc(doc(alice(), "ta5/bob"), record(1500000)));   // 他人の記録
+});
+
+test("ウォルナット：コレクション名（wn5）が既知の日時で正しい", () => {
+  const a = Date.UTC(2026, 8, 25, 14, 59, 59);
+  assert.equal(colAt("day", a, "walnut"), "wn5d_2026_9_25");
+  assert.equal(colAt("all", a, "walnut"), "wn5");
+  assert.equal(colAt("week", a, "walnut"), colAt("week", a).replace("ta5w_", "wn5w_"));
+});
+
+test("ウォルナット：今日・今週・全期間に登録でき、誰でも読める", async () => {
+  await awayFromBoundary();
+  const now = Date.now();
+  for (const period of ["day", "week", "all"]) {
+    await assertSucceeds(setDoc(doc(alice(), colAt(period, now, "walnut"), "alice"), record(654321, {}, 300000)));
+  }
+  for (const col of ["wn5", colAt("day", now - 86400000, "walnut"), colAt("week", now - 7 * 86400000, "walnut")]) {
+    await assertSucceeds(getDocs(query(collection(guest(), col), orderBy("equity", "desc"), limit(20))));
+  }
+  await assertFails(getDocs(collection(guest(), "wn5_evil")));
+  for (const ms of [now - 86400000, now + 86400000]) await assertFails(setDoc(doc(alice(), colAt("day", ms, "walnut"), "alice"), record(654321, {}, 300000)));
+});
+
+test("ウォルナット：軍資金30万円での損益率チェック・上限300万円・ゼロカットの0円", async () => {
+  const wn = () => doc(alice(), "wn5", "alice");
+  for (const eq of [300000, 0, WN_CAP, 654321, 299999]) {
+    await env.clearFirestore();
+    await assertSucceeds(setDoc(wn(), record(eq, {}, 300000)), `equity=${eq}`);
+  }
+  await env.clearFirestore();
+  await assertFails(setDoc(wn(), record(WN_CAP + 1, {}, 300000)));
+  await assertFails(setDoc(wn(), record(654321)));                                        // 通常モード（100万円基準）の損益率では登録できない
+  await assertFails(setDoc(doc(alice(), "ta5", "alice"), record(654321, {}, 300000)));    // ウォルナットの成績を通常のランキングには登録できない
+  await assertFails(setDoc(doc(guest(), "wn5", "alice"), record(654321, {}, 300000)));
 });
 
 test("削除はできない", async () => {
