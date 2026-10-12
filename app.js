@@ -46,7 +46,7 @@
       key: "wlnt", code: "WLNT/JPY", name: "ウォルナット/日本円", kind: "fx",
       start: 96, decimals: 3, tick: 0.001, spread: 0.005, leverage: 100,
       lots: [10000, 50000, 100000, 300000], defaultLot: 10000, minUnit: 10000, maxUnit: 1000000, unit: "枚", lotSize: 10000,
-      scales: { 1: [0.1, 30], 5: [0.2, 26], 60: [0.5, 22], 300: [1, 20] },
+      scales: { 1: [0.05, 30], 5: [0.1, 26], 60: [0.25, 22], 300: [0.5, 20] },
       drift: 0.035, longRevert: 0.0003, noise: 0.04, revert: 0.2,
       burstProb: 0.008, burstSize: 0.04, jumpProb: 0.0002, jumpMin: 0.15, jumpMax: 0.4,
       // 相場の局面（1ティックあたりの平均の傾き・値動きの荒さの倍率・長さ[ティック]・次の局面に移る確率[上昇, もみ合い, 下落]）
@@ -59,6 +59,12 @@
       // 指標発表（5分ごとに1回）。発表の前は様子見で値動きが小さく、直前からスプレッドが広がる
       events: [["ウォルナット雇用統計", "雇用統計"], ["ウォルナット中銀 政策金利", "政策金利"], ["ウォルナット国 消費者物価指数", "物価指数"]],
       eventMin: 0.25, eventMax: 0.55,
+      // キリ番（0.5円ごと）の攻防：中心値が抜けようとするたびに、抜けずに押し戻されるか判定（試すほど次は抜けやすい）。
+      // 押し戻したあと3〜8秒（guard）は、その価格を守り続ける（その間のまたぎは試しに数えない）。
+      // 抜けたら損切りを巻き込んで5〜12銭走る。そのうち35%は「ダマシ」で、走ったあと元の側へ戻る（ストップ狩り）
+      kiri: { step: 0.5, holds: [0.9, 0.85, 0.75, 0.65, 0.5, 0.35], bounce: [0.003, 0.01], guard: [5000, 12000], run: [0.05, 0.12], fake: 0.35 },
+      // 荒れた後はしばらく荒れる：直近（約1分）の値動きの大きさに合わせて、細かい値動きの荒さを0.6〜2.5倍に変える
+      volCluster: { ref: 0.012, pow: 0.9, min: 0.6, max: 2.5, keep: 0.997 },
       // フラッシュクラッシュ（ヒゲ）：0.6〜1.6秒かけて25〜60銭急落（3割は上に急騰）し、そのうち7割を10秒ほどで戻す。残りの3割は戻らない
       flashProb: 0.0003, flashMin: 0.25, flashMax: 0.6, flashKeep: 0.3, flashTicks: [3, 8], flashDecay: 0.96,
       limit: 0, floor: 30, volRef: 0.07, spreadCap: 10,
@@ -172,8 +178,13 @@
   // ※乱数の呼び出し順を変えると過去の挑戦状・ランキングの検証が合わなくなる。新しい動きは銘柄の設定がある時だけ乱数を使うこと
   function stepPrice(k, st, m) {
     const c = INSTRUMENTS[k], r = st.rng;
-    let news = null, noise = c.noise;
+    let news = null, noise = c.noise, drift = c.drift;
     st.flash = false;
+    const prevC = st.center, prevP = st.price;
+    if (c.volCluster) {   // 荒れた後はしばらく荒れる（直近の値動きの大きさで、細かい値動きを大きく・小さくする）
+      const v = c.volCluster, mult = clamp(Math.pow((st.absEw || v.ref) / v.ref, v.pow), v.min, v.max);
+      noise *= mult; drift *= mult;
+    }
     if (c.flashProb) st.price -= st.shock || 0;   // 急変の上乗せ分を外して、ふだんの値動きを計算する
     let ev = null, waiting = false;
     if (c.events) {
@@ -192,7 +203,25 @@
       if (!waiting) { st.center += d; noise *= g.vol; }
     }
     if (waiting) noise *= 0.4;
-    st.center += (r() - 0.5) * c.drift + (c.start - st.center) * c.longRevert;
+    st.center += (r() - 0.5) * drift + (c.start - st.center) * c.longRevert;
+    if (c.kiri) {
+      // キリ番をまたごうとしたら、押し戻すか・抜けるかを決める
+      const kr = c.kiri, a = Math.floor(prevC / kr.step), b = Math.floor(st.center / kr.step);
+      if (a !== b) {
+        const dir = b > a ? 1 : -1, L = (dir > 0 ? b : a) * kr.step;
+        if (st.kiriL !== L) { st.kiriL = L; st.kiriN = 0; st.kiriUntil = -Infinity; }
+        if (m < st.kiriUntil) st.center = L - dir * kr.bounce[0];   // 守っている間は、試しに数えずに押し戻す
+        else if (r() < kr.holds[Math.min(st.kiriN++, kr.holds.length - 1)]) {   // 押し戻される
+          st.center = L - dir * (kr.bounce[0] + r() * (kr.bounce[1] - kr.bounce[0]));
+          st.kiriUntil = m + kr.guard[0] + r() * (kr.guard[1] - kr.guard[0]);
+        } else {
+          const run = kr.run[0] + r() * (kr.run[1] - kr.run[0]);
+          st.shockN = 3; st.shockStep = dir * run / 3;   // 損切りを巻き込んで数ティックで走る
+          if (r() < kr.fake) st.center = L - dir * 0.01;   // ダマシ：走った分は戻り、元の側に残る（ストップ狩り）
+          else { st.center = L + dir * run * 0.5; st.kiriN = 0; }
+        }
+      }
+    }
     if (c.jumpProb && r() < c.jumpProb) {
       const up = r() < 0.5;
       st.center += (up ? 1 : -1) * (c.jumpMin + r() * (c.jumpMax - c.jumpMin));
@@ -226,6 +255,7 @@
       st.price += st.shock;
     }
     st.price = lim ? clamp(st.price, lim[0], lim[1]) : Math.max(c.floor, st.price);
+    if (c.volCluster) st.absEw = (st.absEw || c.volCluster.ref) * c.volCluster.keep + Math.abs(st.price - prevP) * (1 - c.volCluster.keep);
     return news;
   }
   function stepEngine(k, t) {
@@ -728,7 +758,6 @@
     $("marginLabel").textContent = fmtYen(m);
     const free = freeMargin();
     $("freeMarginLabel").textContent = fmtYen(free);
-    $("perYenLabel").textContent = "±" + fmtYen(units || 0);   // 1円動いたときの損益（数量×1円）
     const s = order.dir === "buy" ? 1 : -1;
     const parts = [];
     const tp = parseFloat(tpInput.value), sl = parseFloat(slInput.value);
@@ -2008,10 +2037,10 @@
     if (!m) return null;
     try {
       const o = JSON.parse(b64urlDecode(m[1]));
-      // v3＝通常モード（従来の形式）、v5＝ウォルナットモード（g: "w"）。古いページが通常モードと取り違えないよう版を分ける
-      // （v4 は値動きを見直す前のウォルナット。相場が再現できないので受け付けない）
-      const game = o && o.v === 5 && o.g === "w" ? "walnut" : "normal";
-      const ok = o && (o.v === 3 || (o.v === 5 && o.g === "w")) &&
+      // v3＝通常モード（従来の形式）、v6＝ウォルナットモード（g: "w"）。古いページが通常モードと取り違えないよう版を分ける
+      // （v4・v5 は値動きを見直す前のウォルナット。相場が再現できないので受け付けない）
+      const game = o && o.v === 6 && o.g === "w" ? "walnut" : "normal";
+      const ok = o && (o.v === 3 || (o.v === 6 && o.g === "w")) &&
         Number.isInteger(o.s) && o.s >= 0 && o.s <= 4294967295 &&
         Number.isFinite(o.a) && Number.isFinite(o.b) &&
         o.a >= 0 && o.a <= 24 * 3600 * 1000 && Math.abs((o.b - o.a) - TA_MS) < TICK_MS;   // 5分勝負のみ受け付ける
@@ -2038,7 +2067,7 @@
   }
   function buildChallengeUrl(equity) {
     const range = challenge ? { a: challenge.a, b: challenge.b } : { a: roundStartM, b: currentM() };
-    const payload = MODE.key === "walnut" ? { v: 5, g: "w", s: marketSeed } : { v: 3, s: marketSeed };
+    const payload = MODE.key === "walnut" ? { v: 6, g: "w", s: marketSeed } : { v: 3, s: marketSeed };
     Object.assign(payload, { a: Math.round(range.a), b: Math.round(range.b), n: nickname || "", e: Math.round(equity), t: stats.trades });
     return shareBaseUrl() + "#c=" + b64urlEncode(JSON.stringify(payload));
   }

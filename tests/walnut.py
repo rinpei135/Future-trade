@@ -37,7 +37,7 @@ with sync_playwright() as p:
     pg.click("#lotRow button:nth-child(4)"); pg.wait_for_timeout(250)
     ask = float(pg.inner_text("#dirBuyPx"))
     margin = yen(pg.inner_text("#marginLabel"))
-    check("30枚なら1円で±30万円の表示", pg.inner_text("#perYenLabel") == "±¥300,000" and pg.input_value("#qtyInput") == "30", pg.inner_text("#perYenLabel"))
+    check("30枚を選ぶと数量欄は30（枚）", pg.input_value("#qtyInput") == "30")
     check("30枚の必要証拠金＝30万通貨×レート÷100", abs(margin - ask * 300000 / 100) < 400 and margin <= 300000, f"{margin} / ask {ask}")
     check("銘柄はWLNTだけ（通常の銘柄の相場は動かさない）", pg.evaluate("() => Object.keys(window.__eng).includes('wlnt')"))
     sp = []
@@ -114,7 +114,7 @@ with sync_playwright() as p:
     pg.click("#chalShareBtn"); pg.wait_for_timeout(300)
     url = pg.input_value("#chalUrl")
     payload = json.loads(base64.urlsafe_b64decode(url.split("#c=")[1] + "==").decode("utf-8"))
-    check("挑戦状URLはv5・モードつき", payload.get("v") == 5 and payload.get("g") == "w", str(payload)[:80])
+    check("挑戦状URLはv6・モードつき", payload.get("v") == 6 and payload.get("g") == "w", str(payload)[:80])
     check("シェア文にウォルナットモード", "ウォルナット" in pg.input_value("#shareText") and "ウォルナット" in pg.inner_text("#rcDate"))
     pg.click("#shareClose")
     # 検証（ウォルナットのランキングとして本物・改ざん、通常のランキングとしては不一致）
