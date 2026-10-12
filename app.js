@@ -728,7 +728,6 @@
     $("marginLabel").textContent = fmtYen(m);
     const free = freeMargin();
     $("freeMarginLabel").textContent = fmtYen(free);
-    $("perYenLabel").textContent = "±" + fmtYen(units || 0);   // 1円動いたときの損益（数量×1円）
     const s = order.dir === "buy" ? 1 : -1;
     const parts = [];
     const tp = parseFloat(tpInput.value), sl = parseFloat(slInput.value);
