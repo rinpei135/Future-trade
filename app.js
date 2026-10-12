@@ -423,7 +423,9 @@
     d.className = "toast " + (kind || "");
     d.textContent = msg;
     toastWrap.appendChild(d);
-    while (toastWrap.children.length > 4) toastWrap.firstChild.remove();
+    // スマホではチャートを隠さないよう、同時に出す通知は2つまで（古いものから消す）
+    const max = window.matchMedia && window.matchMedia("(max-width: 980px)").matches ? 2 : 4;
+    while (toastWrap.children.length > max) toastWrap.firstChild.remove();
     setTimeout(() => d.classList.add("out"), 3400);
     setTimeout(() => d.remove(), 3800);
   }
