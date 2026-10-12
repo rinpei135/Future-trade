@@ -76,8 +76,10 @@ with sync_playwright() as p:
             pg.click("#submitBtn"); pg.wait_for_timeout(150)
             o = pg.evaluate("() => window.__ord().slice(-1)[0]")
             # 指値を少しだけ越える幅で動かす（大きく動かすと、約定した直後に損切まで届いて決済されるため）
-            shift(k, -gap * 1.5 if d == "buy" else gap * 1.5)
-            ps = positions(); pp = ps[-1] if ps else None
+            # 価格を動かし、約定した瞬間（50ms以内）の建玉を控える（そのあとの自然な値動きで損切されても比べられるように）
+            pp = pg.evaluate("""async ([k, d]) => { window.__eng[k].ticks.forEach(x => { x.p += d; }); window.__eng[k].flashT = undefined;
+                for (let i = 0; i < 40; i++) { await new Promise(r => setTimeout(r, 50)); const ps = window.__pos(); if (ps.length) return ps[ps.length - 1]; } return null; }""",
+                [k, -gap * 1.5 if d == "buy" else gap * 1.5])
             better = pp and (pp["entry"] <= lp + 1e-9 if d == "buy" else pp["entry"] >= lp - 1e-9)
             check(f"{T} 指値{('買い' if d == 'buy' else '売り')}：価格が届くと約定し、指値以上に有利", nord() == 0 and pp is not None and better, f"指値{lp} 約定{pp and pp['entry']}")
             check(f"{T} 指値{('買い' if d == 'buy' else '売り')}：利確・損切を建玉に引き継ぐ", pp and o and pp["tp"] == o["tp"] and pp["sl"] == o["sl"] and o["tp"] is not None, f"注文{o and (o['tp'], o['sl'])} 建玉{pp and (pp['tp'], pp['sl'])}")
@@ -129,6 +131,35 @@ with sync_playwright() as p:
         qcell = pg.locator("#ordersBody tr").first.locator("td").nth(2).inner_text()
         check(f"{T} 注文一覧の数量の表示", qcell == (f"{u2 // 10000}" if unit == "枚" else f"{u2:,}"), qcell)
         pg.click("#cancelAllBtn"); bracket(False, False); pg.click("#lotRow button:nth-child(1)")
+        # --- 指値の価格を書き換えると、利確・損切も同じ幅だけ動く ---
+        settle(); otype("limit"); direction("buy"); bracket(False, False)
+        lp = round(ask() - gap, 3); pg.fill("#priceInput", f"{lp:.3f}"); bracket(True, True)
+        tp0, sl0 = float(pg.input_value("#tpInput")), float(pg.input_value("#slInput"))
+        lp2 = round(lp - gap, 3); pg.fill("#priceInput", f"{lp2:.3f}")
+        tp1, sl1 = float(pg.input_value("#tpInput")), float(pg.input_value("#slInput"))
+        check(f"{T} 指値の価格を書き換えると、利確・損切も同じ幅だけ動く", abs((tp1 - tp0) - (lp2 - lp)) < 1e-6 and abs((sl1 - sl0) - (lp2 - lp)) < 1e-6, f"価格{lp}→{lp2} 利確{tp0}→{tp1} 損切{sl0}→{sl1}")
+        # 1文字ずつ入力しても（途中の数値で動いても）、最後は同じ幅だけ動いた位置になる
+        lp3 = round(lp2 + gap / 2, 3)
+        pg.click("#priceInput"); pg.keyboard.press("Control+A"); pg.keyboard.type(f"{lp3:.3f}", delay=20)
+        tp2, sl2 = float(pg.input_value("#tpInput")), float(pg.input_value("#slInput"))
+        check(f"{T} 1文字ずつ入力しても、利確・損切は注文価格との距離を保つ", abs((tp2 - lp3) - (tp0 - lp)) < 1e-6 and abs((sl2 - lp3) - (sl0 - lp)) < 1e-6, f"価格{lp3} 利確{tp2} 損切{sl2}")
+        pg.click("#submitBtn"); pg.wait_for_timeout(150)
+        o = pg.evaluate("() => window.__ord().slice(-1)[0]")
+        check(f"{T} 動いた利確・損切のまま注文が入る", o and abs(o["tp"] - tp2) < 1e-6 and abs(o["sl"] - sl2) < 1e-6 and abs(o["price"] - lp3) < 1e-6)
+        # チャートの注文ラインをドラッグして価格を変えると、利確・損切も同じ幅だけ動く（ラインが画面に入るよう5秒足で）
+        pg.click("#tfPills .tf-pill:nth-child(2)"); pg.wait_for_timeout(400)
+        box = pg.locator("#chart").bounding_box(); found = None
+        for yy in range(int(box["y"]) + 20, int(box["y"] + box["height"]) - 90, 2):
+            pg.mouse.move(box["x"] + 300, yy)
+            if pg.evaluate("() => document.getElementById('chart').style.cursor") == "ns-resize": found = yy; break
+        if found:
+            pg.mouse.down(); pg.mouse.move(box["x"] + 300, found + 30, steps=6); pg.mouse.up(); pg.wait_for_timeout(300)
+        o2 = pg.evaluate("() => window.__ord().slice(-1)[0]")
+        d = o2["price"] - o["price"] if o2 else 0
+        check(f"{T} 注文ラインのドラッグで価格を変えると、利確・損切も同じ幅だけ動く", found is not None and d < 0 and abs((o2["tp"] - o["tp"]) - d) < 1e-6 and abs((o2["sl"] - o["sl"]) - d) < 1e-6,
+              f"価格{o['price']}→{o2 and o2['price']} 利確{o['tp']}→{o2 and o2['tp']}")
+        pg.click("#tfPills .tf-pill:nth-child(1)")
+        pg.click("#cancelAllBtn"); bracket(False, False)
     # --- ウォルナット：待機中の指値が約定するときに証拠金が足りなければ、約定せずに取り消される ---
     settle(); otype("limit"); direction("buy"); pg.click("#lotRow button:nth-child(4)")
     for i in range(2):

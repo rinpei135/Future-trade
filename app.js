@@ -696,10 +696,13 @@
     const v = parseFloat(priceInput.value);
     return isFinite(v) ? v : engines[k].pub;
   }
+  // 注文価格を書き換えたとき、利確・損切を同じ幅だけ動かすための前回の注文価格
+  let lastOrderPrice = NaN;
   function setDefaultOrderPrice() {
     const k = currentSym, c = INSTRUMENTS[k], pub = engines[k].pub;
     const below = (order.type === "limit") === (order.dir === "buy");
     priceInput.value = fmtIn(k, roundTo(pub + (below ? -c.orderOffset : c.orderOffset), c.tick));
+    lastOrderPrice = parseFloat(priceInput.value);
   }
   function setDefaultBracket(which) {
     const k = currentSym, c = INSTRUMENTS[k], ref = refPrice(), s = order.dir === "buy" ? 1 : -1;
@@ -743,6 +746,20 @@
     const v = parseInt(qtyInput.value, 10);
     if (isFinite(v)) order.qty[currentSym] = qtyFromDisp(currentSym, v);
     renderLots(); updateOrderPanel();
+  });
+  // 指値・逆指値の価格を書き換えたら、利確・損切も同じ幅だけ動かす（注文価格との距離を保つ）。
+  // 入力途中で数値にならない間は動かさず、数値に戻った時点でまとめて動かす
+  priceInput.addEventListener("input", () => {
+    const k = currentSym, v = parseFloat(priceInput.value);
+    if (!isFinite(v)) return;
+    if (isFinite(lastOrderPrice)) {
+      const d = v - lastOrderPrice;
+      [[order.tpOn, tpInput], [order.slOn, slInput]].forEach(([on, inp]) => {
+        const x = parseFloat(inp.value);
+        if (on && isFinite(x)) inp.value = fmtIn(k, x + d);
+      });
+    }
+    lastOrderPrice = v;
   });
   [priceInput, tpInput, slInput].forEach(i => i.addEventListener("input", updateOrderPanel));
   $("tpOn").addEventListener("change", (e) => { order.tpOn = e.target.checked; tpInput.disabled = !order.tpOn; if (order.tpOn) setDefaultBracket("tp"); updateOrderPanel(); });
@@ -1533,7 +1550,12 @@
       setBracket(p, kind, price);
     } else if (ln.kind === "order") {
       const o = ln.ref;
-      if (validOrderPrice(o.sym, o.type, o.dir, price)) { o.price = price; toast("注文価格を " + fmtP(o.sym, price) + " に変更しました", "warn"); }
+      if (validOrderPrice(o.sym, o.type, o.dir, price)) {
+        const d = price - o.price;   // 利確・損切も同じ幅だけ動かす（注文価格との距離を保つ）
+        if (o.tp !== null) o.tp = roundTo(o.tp + d, c.tick);
+        if (o.sl !== null) o.sl = roundTo(o.sl + d, c.tick);
+        o.price = price; toast("注文価格を " + fmtP(o.sym, price) + " に変更しました" + (o.tp !== null || o.sl !== null ? "（利確・損切も同じ幅だけ移動）" : ""), "warn");
+      }
       else toast("その価格には変更できません（すぐに約定してしまう位置です）", "err");
     }
     renderPositions();
