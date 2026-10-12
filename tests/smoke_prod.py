@@ -22,10 +22,7 @@ def check(name, cond, detail="", warn=False):
     tag = "OK  " if cond else ("WARN" if warn else "NG  ")
     results.append(f"{tag} {name}" + (f"  ({detail})" if detail else ""))
 
-AD_HOSTS = re.compile(r"^https://([a-z0-9-]+\.)*(googlesyndication\.com|doubleclick\.net|adtrafficquality\.google)/|^https://fundingchoicesmessages\.google\.com/")
 def attach(pg, tag):
-    # 本物の広告は読み込まない（自動操作での広告表示は AdSense の無効なトラフィック扱いになりうるため）
-    pg.route(AD_HOSTS, lambda rt: rt.fulfill(status=200, body="", headers={"Content-Type": "text/javascript"}))
     pg.add_init_script("document.addEventListener('securitypolicyviolation', e => console.error('CSP違反: ' + e.violatedDirective + ' ' + e.blockedURI))")
     pg.on("pageerror", lambda e: errs.append(f"[{tag}] pageerror: {e}"))
     pg.on("console", lambda m: errs.append(f"[{tag}] console.{m.type}: {m.text}") if m.type == "error" else None)

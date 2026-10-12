@@ -40,9 +40,13 @@ with sync_playwright() as p:
     check("30枚を選ぶと数量欄は30（枚）", pg.input_value("#qtyInput") == "30")
     check("30枚の必要証拠金＝30万通貨×レート÷100", abs(margin - ask * 300000 / 100) < 400 and margin <= 300000, f"{margin} / ask {ask}")
     check("銘柄はWLNTだけ（通常の銘柄の相場は動かさない）", pg.evaluate("() => Object.keys(window.__eng).includes('wlnt')"))
+    # 荒れている時間はスプレッドが広がるので、最大10秒待って0.5銭に戻ることを確かめる
     sp = []
-    for i in range(6): sp.append(float(pg.inner_text("#spreadBox"))); pg.wait_for_timeout(250)
-    check("ふだんのスプレッドは0.5銭", min(sp) == 0.5, " ".join(map(str, sp)))
+    for i in range(40):
+        sp.append(float(pg.inner_text("#spreadBox")))
+        if sp[-1] == 0.5: break
+        pg.wait_for_timeout(250)
+    check("ふだんのスプレッドは0.5銭", min(sp) == 0.5, " ".join(map(str, sp[-8:])))
     check("チャートの上に指標発表の予告", pg.is_visible("#evBadge") and "まで" in pg.inner_text("#evBadge"), pg.inner_text("#evBadge"))
     # --- 未来視点は1回だけ ---
     check("未来視点の残り回数表示", "あと1回" in pg.inner_text("#futureToggle"), pg.inner_text("#futureToggle"))

@@ -186,7 +186,6 @@ with sync_playwright() as p:
     check("スマホ：上部のボタンは2段以内", rows <= 2, f"{rows}段")
     m.tap("#moreBtn"); m.wait_for_timeout(150); m.tap("#moreHelp"); m.wait_for_timeout(150)
     check("スマホ：「⋯」メニューから遊び方", m.is_visible("#helpModal")); m.tap("#helpClose")
-    check("スマホ：広告枠は操作バーの近く（チャート下）に出さない", m.is_hidden(".ad-banner"))
     over = m.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
     check("スマホ：横スクロールが発生しない", over <= 0, f"はみ出し {over}px")
     m.tap("#mQty"); m.tap("#mBuy"); m.wait_for_timeout(300); m.tap("#mSell"); m.wait_for_timeout(300)
@@ -206,13 +205,12 @@ with sync_playwright() as p:
     d.screenshot(path="tests/out/dark.png")
     check("ダークモード表示", True)
     pp = ctx.new_page(); attach(pp, "privacy"); pp.goto(URL_BASE + "/privacy.html"); pp.wait_for_timeout(200)
-    check("プライバシーポリシー表示", "rinpei135" in pp.inner_text("body") and "Google AdSense" in pp.inner_text("body"))
-    # 広告（AdSense）：テスト用ビルドからは除いているので、公開用の index.html を直接確認する
+    check("プライバシーポリシー表示（広告の記載なし）", "rinpei135" in pp.inner_text("body") and "AdSense" not in pp.inner_text("body"))
+    # 広告は掲載しない：AdSense のコード・広告枠・CSP の広告用ドメインが残っていない
     src = open("index.html", encoding="utf-8").read()
     csp = src.split('http-equiv="Content-Security-Policy" content="')[1].split('"')[0]
-    check("広告枠は広告ユニットを入れるまで表示しない", pg.locator(".ad-slot").count() == 2 and all(not pg.locator(".ad-slot").nth(i).is_visible() for i in range(2)))
-    check("AdSense のコードと CSP の許可", "adsbygoogle.js?client=ca-pub-8966952880320749" in src
-          and all(d in csp.split("script-src")[1].split(";")[0] for d in ("https://pagead2.googlesyndication.com", "https://*.adtrafficquality.google")))
+    check("広告のコード・広告枠・CSPの広告用ドメインがない", "adsbygoogle" not in src and pg.locator(".ad-slot").count() == 0
+          and not any(d in csp for d in ("googlesyndication", "doubleclick", "adtrafficquality", "fundingchoices")))
     import re
     va, vr = re.search(r'src="app\.js\?v=(\d+)"', src), re.search(r'src="ranking\.js\?v=(\d+)"', src)
     check("app.js・ranking.js に版番号（?v=）がつき、同じ版", bool(va and vr and va.group(1) == vr.group(1)), va.group(1) if va else "なし")
