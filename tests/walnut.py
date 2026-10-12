@@ -40,6 +40,10 @@ with sync_playwright() as p:
     check("30枚なら1円で±30万円の表示", pg.inner_text("#perYenLabel") == "±¥300,000" and pg.input_value("#qtyInput") == "30", pg.inner_text("#perYenLabel"))
     check("30枚の必要証拠金＝30万通貨×レート÷100", abs(margin - ask * 300000 / 100) < 400 and margin <= 300000, f"{margin} / ask {ask}")
     check("銘柄はWLNTだけ（通常の銘柄の相場は動かさない）", pg.evaluate("() => Object.keys(window.__eng).includes('wlnt')"))
+    sp = []
+    for i in range(6): sp.append(float(pg.inner_text("#spreadBox"))); pg.wait_for_timeout(250)
+    check("ふだんのスプレッドは0.5銭", min(sp) == 0.5, " ".join(map(str, sp)))
+    check("チャートの上に指標発表の予告", pg.is_visible("#evBadge") and "まで" in pg.inner_text("#evBadge"), pg.inner_text("#evBadge"))
     # --- 未来視点は1回だけ ---
     check("未来視点の残り回数表示", "あと1回" in pg.inner_text("#futureToggle"), pg.inner_text("#futureToggle"))
     pg.click("#futureToggle"); pg.wait_for_timeout(300)
@@ -83,11 +87,21 @@ with sync_playwright() as p:
     check("ウォルナットのタイムアタック開始", "タイムアタック" in pg.inner_text("#roundBadge") and pg.inner_text("#balanceVal") == "¥300,000" and "あと1回" in pg.inner_text("#futureToggle"))
     pg.click("#symBtn"); pg.click("#symMenu .dd-item[data-sym=crnjpy]"); pg.wait_for_timeout(200)
     check("タイムアタック中はモードを切り替えられない", pg.is_hidden("#modeModal") and pg.inner_text("#symBtnLabel") == "WLNT/JPY")
+    # 相場再現の比較用に、開始直後の相場を控えておく（このあと指標発表の確認で早送りするため、ここで控える）
+    mine = dict(map(tuple, pg.evaluate("""() => { const ep = window.__ep(); return window.__eng.wlnt.ticks.map(x => [x.t - ep, +x.p.toFixed(6)]); }""")))
+    # --- 指標発表：予告 → 10秒前の案内 → 発表（ニュース・スプレッド拡大） ---
+    t = pg.inner_text("#evBadge"); mm, ss = t.split("まで ")[1].split(":"); remain = (int(mm) * 60 + int(ss)) * 1000
+    check("タイムアタックの指標発表は1:00〜4:00（みんなに見える価格）", 55000 <= remain <= 241000, t)
+    pg.evaluate(FF(remain - 32000)); pg.wait_for_timeout(3000)    # 発表の瞬間（相場時刻）は早送りせずに通す
+    pg.evaluate(FF(21000)); pg.wait_for_timeout(600)
+    check("発表10秒前の案内", "まもなく" in pg.inner_text("#toastWrap") and "soon" in (pg.get_attribute("#evBadge", "class") or ""), pg.inner_text("#evBadge"))
+    pg.evaluate(FF(10000)); pg.wait_for_timeout(800)
+    news, spw = pg.inner_text("#newsText"), float(pg.inner_text("#spreadBox"))
+    check("発表：ニュースが出て、スプレッドが大きく広がる", news.startswith("【指標】") and spw >= 3.0 and "発表" in pg.inner_text("#evBadge"), f"{news[:30]} / スプレッド{spw}銭")
     pg.click("#futureToggle")
     for i, lot in enumerate((1, 3, 2)):
         pg.click(f"#lotRow button:nth-child({lot})"); pg.click("#qBuy" if i % 2 == 0 else "#qSell"); pg.wait_for_timeout(900); pg.click("#closeAllBtn"); pg.wait_for_timeout(300)
     pg.click("#lotRow button:nth-child(2)"); pg.click("#qSell"); pg.wait_for_timeout(500)
-    mine = dict(map(tuple, pg.evaluate("""() => { const ep = window.__ep(); return window.__eng.wlnt.ticks.map(x => [x.t - ep, +x.p.toFixed(6)]); }""")))
     pg.evaluate(FF(301000)); pg.wait_for_timeout(1300)
     check("5分で自動終了・全決済", pg.is_visible("#chalResultModal") and "建玉はありません" in pg.inner_text("#openBody"))
     lr = pg.evaluate("() => { const r = window.__lr(); return { eq: Math.round(r.equity), ret: r.ret, seed: r.seed, log: r.log, n: r.tradeList.length, game: r.game }; }")
@@ -100,7 +114,7 @@ with sync_playwright() as p:
     pg.click("#chalShareBtn"); pg.wait_for_timeout(300)
     url = pg.input_value("#chalUrl")
     payload = json.loads(base64.urlsafe_b64decode(url.split("#c=")[1] + "==").decode("utf-8"))
-    check("挑戦状URLはv4・モードつき", payload.get("v") == 4 and payload.get("g") == "w", str(payload)[:80])
+    check("挑戦状URLはv5・モードつき", payload.get("v") == 5 and payload.get("g") == "w", str(payload)[:80])
     check("シェア文にウォルナットモード", "ウォルナット" in pg.input_value("#shareText") and "ウォルナット" in pg.inner_text("#rcDate"))
     pg.click("#shareClose")
     # 検証（ウォルナットのランキングとして本物・改ざん、通常のランキングとしては不一致）
@@ -145,6 +159,7 @@ with sync_playwright() as p:
           and "walnut" not in (pg.get_attribute("body", "class") or "") and pg.inner_text("#futureToggle").strip().endswith("未来視点を使う"))
     pg.click("#rankBtn"); pg.wait_for_timeout(200)
     check("通常モードではランキングも通常から開く", pg.evaluate("() => window.__fetch[window.__fetch.length - 1]") == "normal")
+    check("通常モードには指標発表の予告を出さない", pg.is_hidden("#evBadge"))
     pg.click("#rankClose")
     # --- スマホ ---
     m = b.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True, device_scale_factor=2).new_page(); attach(m, "スマホ")
@@ -155,6 +170,7 @@ with sync_playwright() as p:
     check("スマホ：未来視点（残り1回）", "あと1回" in m.inner_text("#mFuture"))
     over = m.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
     check("スマホ：横スクロールが発生しない", over <= 0, f"はみ出し {over}px")
+    check("スマホ：指標発表の予告", m.is_visible("#evBadge"))
     m.screenshot(path="tests/out/walnut_mobile.png")
     w = b.new_context(viewport={"width": 1500, "height": 950}).new_page(); attach(w, "PC幅1500")
     w.goto(URL); w.wait_for_timeout(500); w.click("#helpClose"); to_walnut(w)
