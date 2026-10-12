@@ -320,6 +320,8 @@
   @media (max-width: 980px) {
     .desk-only, .lbl, .tb-spacer, .mob-hide { display: none !important; }
     .mob-only { display: block; }
+    /* 「⋯」メニューは右寄せで開くので、ボタンを段の右端に置く（左端に回り込むとメニューが画面の左にはみ出す） */
+    .menu-wrap.mob-only { margin-left: auto; }
     .topbar { gap: 6px; padding: 6px 8px; }
     .tb-btn, .ta-btn, .share-btn { padding: 6px 8px; font-size: 0.72rem; }
     .tf-pill { padding: 4px 7px; font-size: 0.7rem; }
@@ -373,6 +375,21 @@
   table.rank-table tr:last-child td { border-bottom: none; }
   table.rank-table tr.me { background: var(--future-glow); }
   table.rank-table td.rnk { font-weight: 800; color: var(--text-dim); width: 34px; }
+  /* スマホの幅では「取引」の列を省き、長いニックネームは「…」で切って、表が横にはみ出さないようにする */
+  @media (max-width: 420px) {
+    table.rank-table { font-size: 0.72rem; }
+    table.rank-table th, table.rank-table td { padding: 6px 5px; }
+    table.rank-table th:nth-child(5), table.rank-table td:nth-child(5) { display: none; }
+    table.rank-table td:nth-child(2) { max-width: 7.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    table.rank-table td.mono { white-space: nowrap; }
+    table.rank-table td.rnk { width: 24px; }
+  }
+  /* 幅320px前後の小さいスマホ：ダイアログの余白を詰め、ニックネームをさらに短く切る */
+  @media (max-width: 360px) {
+    .modal { padding: 8px; }
+    .modal-box { padding: 12px; }
+    table.rank-table td:nth-child(2) { max-width: 5em; }
+  }
   table.rank-table tr:nth-child(1) td.rnk { color: #f0b429; } table.rank-table tr:nth-child(2) td.rnk { color: #c7ccd3; } table.rank-table tr:nth-child(3) td.rnk { color: #c17a4a; }
   #nickModal { z-index: 95; }
   #helpModal { z-index: 94; }   /* 重なり順：ニックネーム → 遊び方 → 挑戦状 */
