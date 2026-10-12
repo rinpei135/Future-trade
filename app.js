@@ -40,17 +40,29 @@
       rateBuy: -0.000077, rateSell: -0.000032, carryLabel: "金利"
     },
     // ウォルナットモード専用。1枚＝1万通貨。30枚（30万通貨）なら1円の値動きで30万円動く
+    // 値動きは高金利の資源国通貨（豪ドル/円のような通貨）の「1日分」を5分に縮めたイメージ：
+    // 上昇はじわじわ・下落は一気に、トレンドともみ合いが切り替わり、5分ごとに1回の指標発表で大きく動く
     wlnt: {
       key: "wlnt", code: "WLNT/JPY", name: "ウォルナット/日本円", kind: "fx",
-      start: 96, decimals: 3, tick: 0.001, spread: 0.01, leverage: 100,
+      start: 96, decimals: 3, tick: 0.001, spread: 0.005, leverage: 100,
       lots: [10000, 50000, 100000, 300000], defaultLot: 10000, minUnit: 10000, maxUnit: 1000000, unit: "枚", lotSize: 10000,
       scales: { 1: [0.1, 30], 5: [0.2, 26], 60: [0.5, 22], 300: [1, 20] },
-      drift: 0.09, longRevert: 0.0003, noise: 0.02, revert: 0.08,
-      burstProb: 0.01, burstSize: 0.06, jumpProb: 0.0005, jumpMin: 0.3, jumpMax: 0.7,
+      drift: 0.035, longRevert: 0.0003, noise: 0.04, revert: 0.2,
+      burstProb: 0.008, burstSize: 0.04, jumpProb: 0.0002, jumpMin: 0.15, jumpMax: 0.4,
+      // 相場の局面（1ティックあたりの平均の傾き・値動きの荒さの倍率・長さ[ティック]・次の局面に移る確率[上昇, もみ合い, 下落]）
+      // 傾きはティックごとに0.2〜1.8倍でばらつかせ、一直線に動かないようにする。下落の局面は荒れやすい
+      regimes: [
+        { drift: 0.0013, vol: 0.8, len: [200, 450], next: [0, 0.6, 0.4] },     // 上昇：40〜90秒かけてじわじわ
+        { drift: 0, vol: 1, len: [150, 400], next: [0.55, 0, 0.45] },          // もみ合い
+        { drift: -0.0045, vol: 2.2, len: [40, 125], next: [0.3, 0.7, 0] }      // 下落：8〜25秒で一気に、戻りを挟みながら
+      ],
+      // 指標発表（5分ごとに1回）。発表の前は様子見で値動きが小さく、直前からスプレッドが広がる
+      events: [["ウォルナット雇用統計", "雇用統計"], ["ウォルナット中銀 政策金利", "政策金利"], ["ウォルナット国 消費者物価指数", "物価指数"]],
+      eventMin: 0.25, eventMax: 0.55,
       // フラッシュクラッシュ（ヒゲ）：0.6〜1.6秒かけて25〜60銭急落（3割は上に急騰）し、そのうち7割を10秒ほどで戻す。残りの3割は戻らない
       flashProb: 0.0003, flashMin: 0.25, flashMax: 0.6, flashKeep: 0.3, flashTicks: [3, 8], flashDecay: 0.96,
-      limit: 0, floor: 30, volRef: 0.06, spreadCap: 6,
-      orderOffset: 0.3, tpOffset: 0.5, slOffset: 0.3,
+      limit: 0, floor: 30, volRef: 0.07, spreadCap: 10,
+      orderOffset: 0.2, tpOffset: 0.3, slOffset: 0.2,
       rateBuy: 0.0001, rateSell: -0.00012, carryLabel: "スワップ",
       newsUp: [
         "【速報】ウォルナット中銀、予想外の利上げを発表。",
@@ -129,7 +141,7 @@
     const c = INSTRUMENTS[k];
     return {
       price: c.start, center: c.start, pub: c.start, spreadMult: 1, ticks: [], bars: [], views: {}, book: new Map(), limitState: 0,
-      rng: mulberry32((seed ^ (SYM_SALT[k] || 0)) >>> 0)
+      seed: seed >>> 0, rng: mulberry32((seed ^ (SYM_SALT[k] || 0)) >>> 0)
     };
   }
   const MAX_BARS = Math.ceil((BACKFILL_MS + DELAY_MS) / 1000) + 120;
@@ -146,14 +158,40 @@
     "トキワープHD、実験室の壁掛け時計が止まっていたことが発覚。"
   ];
   function limitsOf(k) { const c = INSTRUMENTS[k]; return c.limit ? [c.start - c.limit, c.start + c.limit] : null; }
+  // 指標発表：相場時刻を5分ごとに区切り、各区切りの30秒〜3分30秒のどこかで1回（みんなに見える価格では30秒遅れて1:00〜4:00）
+  const EVENT_BLOCK = 300000;
+  function eventOf(k, seed, block) {
+    const c = INSTRUMENTS[k];
+    if (!c.events) return null;
+    const r = mulberry32(((seed >>> 0) ^ 0x27D4EB2F ^ Math.imul(block + 1, 0x165667B1)) >>> 0);
+    const m = block * EVENT_BLOCK + 30000 + Math.floor(r() * 900) * TICK_MS, e = c.events[Math.floor(r() * c.events.length)];
+    return { m, name: e[0], short: e[1] };
+  }
 
   // 価格を1ステップ進める（st: { price, center, rng }）。ニュースが出たらその文面を返す
   // ※乱数の呼び出し順を変えると過去の挑戦状・ランキングの検証が合わなくなる。新しい動きは銘柄の設定がある時だけ乱数を使うこと
-  function stepPrice(k, st) {
+  function stepPrice(k, st, m) {
     const c = INSTRUMENTS[k], r = st.rng;
-    let news = null;
+    let news = null, noise = c.noise;
     st.flash = false;
     if (c.flashProb) st.price -= st.shock || 0;   // 急変の上乗せ分を外して、ふだんの値動きを計算する
+    let ev = null, waiting = false;
+    if (c.events) {
+      ev = eventOf(k, st.seed, Math.floor(m / EVENT_BLOCK));
+      waiting = m < ev.m && ev.m - m <= 20000;   // 発表前の様子見（値動きが小さく、トレンドも止まる）
+    }
+    if (c.regimes) {
+      if (!(st.regT > 0)) {   // 今の局面が終わったら、次の局面と長さを決める
+        const nx = c.regimes[st.regK === undefined ? 1 : st.regK].next, x = r();
+        st.regK = x < nx[0] ? 0 : x < nx[0] + nx[1] ? 1 : 2;
+        const g = c.regimes[st.regK];
+        st.regT = g.len[0] + Math.floor(r() * (g.len[1] - g.len[0] + 1));
+      }
+      st.regT--;
+      const g = c.regimes[st.regK], d = g.drift * (0.2 + r() * 1.6);
+      if (!waiting) { st.center += d; noise *= g.vol; }
+    }
+    if (waiting) noise *= 0.4;
     st.center += (r() - 0.5) * c.drift + (c.start - st.center) * c.longRevert;
     if (c.jumpProb && r() < c.jumpProb) {
       const up = r() < 0.5;
@@ -164,7 +202,15 @@
     const lim = limitsOf(k);
     if (lim) st.center = clamp(st.center, lim[0], lim[1]);
     const burst = r() < c.burstProb ? (r() - 0.5) * c.burstSize : 0;
-    st.price += (st.center - st.price) * c.revert + gaussR(r) * c.noise + burst;
+    st.price += (st.center - st.price) * c.revert + gaussR(r) * noise + burst;
+    if (ev && m === ev.m) {
+      // 発表：予想どおりなら小さく、外れれば20〜50銭。一度行き過ぎてから4割ほど押し戻す
+      const dir = r() < 0.5 ? -1 : 1, calm = r() < 0.25;
+      const size = calm ? 0.03 + r() * 0.07 : c.eventMin + r() * (c.eventMax - c.eventMin);
+      st.center += dir * size * 0.6;
+      st.shockN = 5; st.shockStep = dir * size * 0.4 / 5;
+      news = "【指標】" + ev.name + "：" + (calm ? "ほぼ予想どおり。反応は限定的" : dir > 0 ? "予想を上回る結果。WLNTが急騰" : "予想を下回る結果。WLNTが急落");
+    }
     if (c.flashProb) {
       if (r() < c.flashProb) {
         const dir = r() < 0.7 ? -1 : 1, size = c.flashMin + r() * (c.flashMax - c.flashMin);
@@ -184,7 +230,7 @@
   }
   function stepEngine(k, t) {
     const e = engines[k];
-    const news = stepPrice(k, e);
+    const news = stepPrice(k, e, t - marketEpoch);
     if (e.flash) e.flashT = t;   // 急変の時刻（ヒゲでのロスカットの判定に使う）
     if (news && !backfilling) newsQueue.push({ at: t + DELAY_MS, text: news });
     const p = e.price;
@@ -237,7 +283,11 @@
       const cut = now - DELAY_MS;
       e.pub = priceAt(k, cut);
       const vol = Math.abs(e.pub - priceAt(k, cut - 1000));
-      const target = 1 + Math.min((c.spreadCap || 5) - 1, Math.max(0, (vol / c.volRef - 1) * 1.5));
+      let target = 1 + Math.min((c.spreadCap || 5) - 1, Math.max(0, (vol / c.volRef - 1) * 1.5));
+      if (c.events) {
+        const mp = cut - marketEpoch, ev = eventOf(k, marketSeed, Math.floor(mp / EVENT_BLOCK));
+        if (mp >= ev.m - 5000 && mp <= ev.m + 4000) target = c.spreadCap;
+      }
       e.spreadMult += (target - e.spreadMult) * (target > e.spreadMult ? 0.6 : 0.08);
       const lim = limitsOf(k);
       if (lim) {
@@ -1767,11 +1817,11 @@
     const series = {};
     md.syms.forEach(k => {
       const c = INSTRUMENTS[k];
-      const st = { price: c.start, center: c.start, rng: mulberry32(((seed >>> 0) ^ (SYM_SALT[k] || 0)) >>> 0) };
+      const st = { price: c.start, center: c.start, seed: seed >>> 0, rng: mulberry32(((seed >>> 0) ^ (SYM_SALT[k] || 0)) >>> 0) };
       const arr = [];
       let base = null;
       for (let m = GRID_START; m <= to; m += TICK_MS) {
-        stepPrice(k, st);
+        stepPrice(k, st, m);
         if (m >= from) { if (base === null) base = m; arr.push(st.price); }
       }
       series[k] = { arr, base };
@@ -2153,7 +2203,7 @@
     $("taBadge").textContent = wn ? "⏱ ウォルナット 5分タイムアタック" : "⏱ 5分タイムアタック";
     $("taLi1").textContent = wn ? "軍資金30万円・レバレッジ100倍で、5分後の最終資産で勝負します。時間になると自動で全決済されます。"
       : "軍資金100万円から、5分後の最終資産で勝負します。時間になると自動で全決済されます。";
-    $("taLi2").textContent = wn ? "未来視点（30秒）は1回だけ。証拠金維持率20%でロスカット、残高がマイナスになってもゼロカットで0円に戻ります。"
+    $("taLi2").textContent = wn ? "未来視点（30秒）は1回だけ。5分の間に1回、指標発表があります（時刻はチャートの上に表示）。証拠金維持率20%でロスカット、残高がマイナスになってもゼロカットで0円に戻ります。"
       : "未来視点（30秒・クールダウン60秒）は、5分間で最大4回使えます。";
     $("taLi3").textContent = wn ? "終了後、成績をウォルナット専用のランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。"
       : "終了後、成績をランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。";
@@ -2182,6 +2232,26 @@
     const pl = floatingTotal(), el = $("mPnl");
     el.textContent = fmtSYen(pl);
     el.style.color = pl > 0 ? "var(--buy)" : pl < 0 ? "var(--sell)" : "";
+  }
+
+  // ======================= 指標発表の予告 =======================
+  // 発表はみんなに見える価格では30秒遅れて出るので、その時刻までの残りを表示する（未来視点なら30秒早く見える）
+  let evToastFor = null;
+  function updateEventBadge(k) {
+    const el = $("evBadge");
+    if (!INSTRUMENTS[k].events) { el.hidden = true; return; }
+    const mp = currentM() - DELAY_MS;
+    let ev = eventOf(k, marketSeed, Math.floor(mp / EVENT_BLOCK));
+    if (mp > ev.m + 20000) ev = eventOf(k, marketSeed, Math.floor(mp / EVENT_BLOCK) + 1);
+    const remain = ev.m - mp;
+    el.hidden = false;
+    el.className = "ev-badge" + (remain <= 10000 ? " soon" : "");
+    el.textContent = remain > 0 ? "📊 " + ev.short + "まで " + fmtDur(remain) : "📊 " + ev.short + " 発表！";
+    el.title = ev.name + "（発表の前後はスプレッドが大きく広がります）";
+    if (remain > 0 && remain <= 10000 && evToastFor !== ev.m) {
+      evToastFor = ev.m;
+      toast("まもなく" + ev.name + "の発表です。発表の前後はスプレッドが大きく広がります", "warn");
+    }
   }
 
   // ======================= メインループ =======================
@@ -2230,6 +2300,7 @@
     const spEl = $("spreadBox");
     spEl.textContent = c.kind === "fx" ? (sp * 100).toFixed(1) : Math.round(sp);
     spEl.classList.toggle("wide", e.spreadMult > 1.4);
+    updateEventBadge(k);
     const lb = $("chLimit");
     lb.hidden = e.limitState === 0;
     lb.className = "limit-badge " + (e.limitState === 1 ? "up" : "down");

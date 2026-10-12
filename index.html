@@ -157,6 +157,8 @@
   .ch-line1 b { color: var(--text); }
   .limit-badge { font-size: 0.64rem; font-weight: 800; padding: 1px 6px; border-radius: 4px; color: #fff; }
   .limit-badge.up { background: var(--sell); } .limit-badge.down { background: #3b82f6; }
+  .ev-badge { font-size: 0.64rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-mid); }
+  .ev-badge.soon { border-color: var(--future); color: var(--future); background: var(--future-glow); }
   .ch-ohlc { font-size: 0.72rem; color: var(--text-dim); margin-top: 3px; display: flex; gap: 9px; flex-wrap: wrap; }
   .ch-ohlc b { font-weight: 600; }
   .ch-ind { font-size: 0.7rem; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
@@ -498,7 +500,7 @@
   <div class="chart-col">
     <div class="chart-shell">
       <div class="chart-head">
-        <div class="ch-line1"><b id="chName">クロノ/日本円</b><span class="mono" id="chMeta">· CRN/JPY · 1秒</span><span class="limit-badge" id="chLimit" hidden></span></div>
+        <div class="ch-line1"><b id="chName">クロノ/日本円</b><span class="mono" id="chMeta">· CRN/JPY · 1秒</span><span class="limit-badge" id="chLimit" hidden></span><span class="ev-badge" id="evBadge" hidden></span></div>
         <div class="ch-ohlc mono" id="chOhlc"></div>
         <div class="ch-ind mono" id="chInd"></div>
         <div class="quote-boxes">
@@ -728,7 +730,8 @@
       </div>
       <div class="wn-key">30枚なら、1円の値動きで±30万円</div>
       <ul class="howto-list">
-        <li>銘柄は架空の通貨「ウォルナット（WLNT/JPY）」だけ。値動きが激しく、数秒で急落してすぐ戻る「ヒゲ」が出ます。急変時はスプレッドが広がり、約定もずれます。</li>
+        <li>銘柄は架空の通貨「ウォルナット（WLNT/JPY）」だけ。上がるときはじわじわ、下がるときは一気に動き、ときどき急落してすぐ戻る「ヒゲ」も出ます。</li>
+        <li>5分ごとに1回、指標発表があります（時刻はチャートの上に表示）。発表で20〜50銭動くことがあり、発表の前後はスプレッドが大きく広がります。</li>
         <li>証拠金維持率が20%を下回るとロスカット。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。</li>
         <li>5分タイムアタックの成績は、ウォルナット専用のランキングに登録されます。</li>
       </ul>
@@ -796,7 +799,7 @@
 </div>
 
 <!-- ?v= はブラウザに古い app.js / ranking.js が残らないための版番号。どちらかを変えたら更新する（日付＋その日の連番2桁） -->
-<script src="app.js?v=2026101202"></script>
-<script type="module" src="ranking.js?v=2026101202"></script>
+<script src="app.js?v=2026101203"></script>
+<script type="module" src="ranking.js?v=2026101203"></script>
 </body>
 </html>
