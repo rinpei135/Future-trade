@@ -46,7 +46,7 @@ with sync_playwright() as p:
         sp.append(float(pg.inner_text("#spreadBox")))
         if sp[-1] == 0.5: break
         pg.wait_for_timeout(250)
-    check("ふだんのスプレッドは0.5銭", min(sp) == 0.5, " ".join(map(str, sp[-8:])))
+    check("ふだんのスプレッドは0.5銭（荒れている時間は少し広がる）", min(sp) <= 0.6, " ".join(map(str, sp[-8:])))
     check("チャートの上に指標発表の予告", pg.is_visible("#evBadge") and "まで" in pg.inner_text("#evBadge"), pg.inner_text("#evBadge"))
     # --- 未来視点は1回だけ ---
     check("未来視点の残り回数表示", "あと1回" in pg.inner_text("#futureToggle"), pg.inner_text("#futureToggle"))

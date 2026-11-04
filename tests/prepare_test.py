@@ -23,7 +23,7 @@ for old, new in [("let lastRound = null;", "let lastRound = null; window.__lr = 
     a = a.replace(old, new, 1)
 (out / "app.js").write_text(a, encoding="utf-8")
 (out / "ranking.js").write_text('''window.__sub=[]; window.Ranking={ready:true,EQUITY_CAP:10000000,myId:()=>"me",
- submitBest:async d=>{window.__sub.push(d);const cap=d.game==="walnut"?3000000:10000000;if(d.equity>cap)return {tooHigh:true,cap,results:[]};return {tooHigh:false,cap,results:[{period:"day",status:"created",best:d.equity},{period:"week",status:"created",best:d.equity},{period:"all",status:"created",best:d.equity}]}},
+ submitBest:async d=>{window.__sub.push(d);const cap={walnut:3000000,walnut500:30000000,walnutU:100000000}[d.game]||10000000;if(d.equity>cap)return {tooHigh:true,cap,results:[]};return {tooHigh:false,cap,results:[{period:"day",status:"created",best:d.equity},{period:"week",status:"created",best:d.equity},{period:"all",status:"created",best:d.equity}]}},
  fetchTop:async(period,n,game)=>{(window.__fetch=window.__fetch||[]).push(game||"normal");return window.__rows||[]}}; window.dispatchEvent(new Event("ranking-ready"));
 ''', encoding="utf-8")
 print("テスト用ビルドを作成しました:", out)

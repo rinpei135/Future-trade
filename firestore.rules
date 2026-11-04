@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function jst() { return request.time + duration.value(9, 'h'); }
-    // pre：コレクション名の頭（通常モード 'ta5'、ウォルナットモード 'wn5'）
+    // pre：コレクション名の頭（通常モード 'ta5'、ウォルナット 100倍 'wn5'・500倍 'wf5'・無制限 'wu5'）
     function dayCol(pre) { return pre + 'd_' + string(jst().year()) + '_' + string(jst().month()) + '_' + string(jst().day()); }
     // math.floor() は小数（2960.0）を返し、string() すると 'ta5w_2960.0' になってクライアントと一致しないため int() で整数にする
     function weekCol(pre) { return pre + 'w_' + string(int(math.floor((request.time.toMillis() + 32400000 + 259200000) / 604800000))); }
@@ -15,7 +15,7 @@ service cloud.firestore {
         && d.keys().hasOnly(['nickname','equity','ret','trades','winRate','futureRate','rank','seed','log','ts'])
         && d.nickname is string && d.nickname.size() > 0 && d.nickname.size() <= 20
         && d.equity is int && d.equity >= 0 && d.equity <= cap
-        && d.ret is number && d.ret >= -100 && d.ret <= 1000
+        && d.ret is number && d.ret >= -100
         && math.abs(d.ret - (d.equity - base) / (base / 100.0)) < 0.02
         && d.trades is int && d.trades >= 0 && d.trades <= 10000
         && d.winRate is int && d.winRate >= 0 && d.winRate <= 100
@@ -27,10 +27,12 @@ service cloud.firestore {
     }
     function validFor(col) {
       return (writableCol(col, 'ta5') && validScore(1000000, 10000000))
-        || (writableCol(col, 'wn5') && validScore(300000, 3000000));
+        || (writableCol(col, 'wn5') && validScore(300000, 3000000))
+        || (writableCol(col, 'wf5') && validScore(300000, 30000000))
+        || (writableCol(col, 'wu5') && validScore(300000, 100000000));
     }
     match /{col}/{uid} {
-      allow read: if isRankCol(col, 'ta5') || isRankCol(col, 'wn5');
+      allow read: if isRankCol(col, 'ta5') || isRankCol(col, 'wn5') || isRankCol(col, 'wf5') || isRankCol(col, 'wu5');
       allow create: if request.auth != null && request.auth.uid == uid && validFor(col);
       allow update: if request.auth != null && request.auth.uid == uid && validFor(col)
         && request.resource.data.equity > resource.data.equity
