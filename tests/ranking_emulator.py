@@ -118,6 +118,28 @@ try:
             me.locator(".vfy").click(); pg.wait_for_timeout(1200)
             v = me.locator(".vfy").inner_text()
             check(f"ウォルナット（{per}）に自分の行・検証 ✓", "エミュレーター" in me.inner_text() and v.startswith("✓"), v)
+        # --- レバレッジ無制限：専用ランキング（wu5）に、100枚を超える数量の記録を登録 → 検証 ✓ ---
+        pg.click("#rankClose")
+        pg.click("#resetBtn"); pg.wait_for_timeout(300)
+        pg.click("#symBtn"); pg.click("#symMenu .dd-item[data-sym=wlnt]"); pg.click("#modeLevSeg button[data-m=walnutU]"); pg.click("#modeStart"); pg.wait_for_timeout(400)
+        pg.click("#taBtn"); pg.click("#taStart"); pg.wait_for_timeout(300)
+        pg.fill("#qtyInput", "200")
+        pg.evaluate("() => { document.getElementById('qBuy').click(); document.getElementById('closeAllBtn').click(); }"); pg.wait_for_timeout(300)   # 途中で飛ばないよう建ててすぐ決済
+        pg.evaluate(FF(301000)); pg.wait_for_timeout(1300)
+        pg.click("#resRankBtn")
+        pg.wait_for_function("() => { const t = document.getElementById('resRankNote').innerText; return t && !t.includes('登録しています'); }", timeout=20000)
+        note = pg.inner_text("#resRankNote")
+        check("無制限：専用ランキングに今日・今週・全期間すべて登録", note == "今日：登録 / 今週：登録 / 全期間：登録", note)
+        pg.evaluate("() => { document.getElementById('chalResultModal').hidden = true; }")
+        pg.click("#rankBtn")
+        pg.wait_for_function("() => !document.getElementById('rankBody').innerText.includes('読み込み中')", timeout=15000)
+        me = pg.locator("#rankBody tr.me")
+        if me.count() == 1:
+            me.locator(".vfy").click(); pg.wait_for_timeout(1200)
+            v = me.locator(".vfy").inner_text()
+            check("無制限：自分の行・検証 ✓", v.startswith("✓"), v)
+        else:
+            check("無制限：自分の行", False, pg.inner_text("#rankBody").replace("\n", " ")[:60])
         # 通常のランキングとは別々（通常のタブには通常モードの記録だけ）
         pg.click("#rankModeTabs button[data-g=normal]")
         pg.wait_for_function("() => !document.getElementById('rankBody').innerText.includes('読み込み中')", timeout=15000)

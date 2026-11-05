@@ -450,6 +450,7 @@
   .wn-rules b { font-size: 0.9rem; }
   .wn-key { text-align: center; font-size: 0.86rem; font-weight: 800; color: #d08a4e; margin: 4px 0 2px; }
   .rank-mode-tabs { margin: 10px 0 0; }
+  .mode-lev-seg { margin: 10px 0 0; }
   .joke-strip { font-size: 0.7rem; color: var(--text-dim); border-top: 1px solid var(--border); padding: 12px 18px 24px; line-height: 1.7; }
 </style>
 </head>
@@ -531,7 +532,7 @@
     <div class="legend-row" id="legendRow"></div>
 
     <div class="strap">
-      チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。銘柄メニューからは、軍資金30万円・レバレッジ100倍・未来視点は1回だけの「ウォルナットモード」も選べます。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
+      チャート・注文・損益はすべて「みんなに見えている現在」の価格で動きます。「未来視点」をONにすると、チャートの裏に30秒先の値動き（破線）が透けて見えます。ただし連続で使えるのは最大30秒までで、使い終えると60秒のクールダウンが必要です。ここぞという場面まで温存するのが攻略の鍵です。銘柄メニューからは、軍資金30万円・未来視点は1回だけで、レバレッジを100倍・500倍・無制限から選べる「ウォルナットモード」も選べます。「5分タイムアタック」の成績はランキングに登録でき、結果から作れる挑戦状URLを送ると、友達があなたと同じ相場で5分勝負できます。<br>
       操作：ドラッグで過去へスクロール、ホイールで拡大縮小、ダブルクリックで最新に戻ります。青い建玉ラインを上下にドラッグすると利確・損切を設定でき、利確・損切・指値のラインもドラッグで動かせます。チャート左上の売り／買いの価格をクリックすると、ワンクリックで成行注文できます。
     </div>
   </div>
@@ -723,19 +724,25 @@
   <div class="modal-box narrow">
     <div id="modeWalnutBody">
       <div class="chal-badge wn">ウォルナットモード</div>
-      <p class="chal-from">レバレッジ100倍の一発勝負</p>
+      <div class="seg mode-lev-seg" id="modeLevSeg">
+        <button data-m="walnut" class="active">100倍</button>
+        <button data-m="walnut500">500倍</button>
+        <button data-m="walnutU">無制限</button>
+      </div>
+      <p class="chal-from" id="modeLevHead">レバレッジ100倍の一発勝負</p>
       <div class="wn-rules">
         <div><small>軍資金</small><b class="mono">¥300,000</b></div>
-        <div><small>レバレッジ</small><b class="mono">100倍</b></div>
+        <div><small>レバレッジ</small><b class="mono" id="modeLevVal">100倍</b></div>
         <div><small>数量</small><b>1枚＝1万通貨</b></div>
         <div><small>未来視点</small><b>1回だけ（30秒）</b></div>
       </div>
-      <div class="wn-key">30枚なら、1円の値動きで±30万円</div>
+      <div class="wn-key" id="modeKey">30枚なら、1円の値動きで±30万円</div>
       <ul class="howto-list">
         <li>銘柄は架空の通貨「ウォルナット（WLNT/JPY）」だけ。上がるときはじわじわ、下がるときは一気に動き、ときどき急落してすぐ戻る「ヒゲ」も出ます。</li>
         <li>5分ごとに1回、指標発表があります（時刻はチャートの上に表示）。発表で20〜50銭動くことがあり、発表の前後はスプレッドが大きく広がります。</li>
-        <li>証拠金維持率が20%を下回るとロスカット。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。</li>
-        <li>5分タイムアタックの成績は、ウォルナット専用のランキングに登録されます。</li>
+        <li id="modeLossLi">証拠金維持率が20%を下回るとロスカット。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。</li>
+        <li id="modeTrapLi" hidden></li>
+        <li>5分タイムアタックの成績は、レバレッジごとの専用ランキングに登録されます。</li>
       </ul>
     </div>
     <div id="modeNormalBody" hidden>
@@ -760,7 +767,7 @@
       <li><b>「未来視点」で30秒先が見える</b><br>ONにすると、チャートの右側に30秒先の値動きが破線で透けて見えます。使えるのは30秒だけで、そのあと60秒のクールダウンがあります。</li>
       <li><b>安く買って高く売る（売りから入ってもOK）</b><br>上がりそうなら「買い」、下がりそうなら「売り」で入り、決済した時点で損益が確定します。</li>
       <li><b>5分タイムアタックでランキングへ</b><br>5分間の成績でランキングに挑戦したり、同じ相場の挑戦状を友達に送ったりできます。</li>
-      <li><b>ウォルナットモード</b><br>銘柄メニューから選べる一発勝負。軍資金30万円・レバレッジ100倍で、30枚持てば1円の値動きで30万円動きます。未来視点は1回だけです。</li>
+      <li><b>ウォルナットモード</b><br>銘柄メニューから選べる一発勝負。軍資金30万円で、レバレッジは100倍・500倍・無制限から選べます。100倍で30枚持てば、1円の値動きで30万円動きます。未来視点は1回だけです。</li>
     </ol>
     <button class="go-btn buy" id="helpClose">はじめる</button>
   </div>
@@ -781,8 +788,10 @@
       <button class="mini-btn" id="rankRefreshBtn">更新</button>
     </div>
     <div class="seg rank-mode-tabs" id="rankModeTabs">
-      <button data-g="normal" class="active">通常（100万円）</button>
-      <button data-g="walnut">ウォルナット（30万円）</button>
+      <button data-g="normal" class="active">通常</button>
+      <button data-g="walnut">100倍</button>
+      <button data-g="walnut500">500倍</button>
+      <button data-g="walnutU">無制限</button>
     </div>
     <div class="seg rank-tabs" id="rankTabs">
       <button data-p="day" class="active">今日</button>
@@ -801,7 +810,7 @@
 </div>
 
 <!-- ?v= はブラウザに古い app.js / ranking.js が残らないための版番号。どちらかを変えたら更新する（日付＋その日の連番2桁） -->
-<script src="app.js?v=2026101208"></script>
-<script type="module" src="ranking.js?v=2026101208"></script>
+<script src="app.js?v=2026110501"></script>
+<script type="module" src="ranking.js?v=2026110501"></script>
 </body>
 </html>

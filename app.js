@@ -5,10 +5,21 @@
   const TICK_MS = 200;
   const DELAY_MS = 30000;
   const BACKFILL_MS = 8 * 3600 * 1000;       // 起動時に生成する過去データ（8時間分）
-  // ゲームモード。ウォルナットモードは軍資金30万円・レバレッジ100倍・WLNT/JPYだけの一発勝負
+  // ゲームモード。ウォルナットモードは軍資金30万円・WLNT/JPYだけの一発勝負で、レバレッジを100倍・500倍・無制限から選ぶ（family が同じ）。
+  // lev：レバレッジ（なければ銘柄の値）/ eventLev：指標発表の前後の上限 / capEquity：資産がこれを超えると capLev に下がる（capEquityLow を割ると戻る）
   const MODES = {
-    normal: { key: "normal", label: "通常", syms: ["crnjpy", "tokiwarp"], balance: 1000000, losscut: 0.5, futureUses: Infinity, zeroCut: false, bestKey: "futurefx_best_v7" },
-    walnut: { key: "walnut", label: "ウォルナット", syms: ["wlnt"], balance: 300000, losscut: 0.2, futureUses: 1, zeroCut: true, bestKey: "futurefx_best_wn1" }
+    normal: { key: "normal", family: "normal", label: "通常", syms: ["crnjpy", "tokiwarp"], balance: 1000000, losscut: 0.5, futureUses: Infinity, zeroCut: false, bestKey: "futurefx_best_v7" },
+    walnut: { key: "walnut", family: "walnut", label: "ウォルナット", short: "ウォルナット", levText: "100倍", g: "w", syms: ["wlnt"], balance: 300000, losscut: 0.2, futureUses: 1, zeroCut: true, bestKey: "futurefx_best_wn1",
+      fullLot: 300000, fullTitle: "30枚の覚悟", keyText: "30枚なら、1円の値動きで±30万円", lossText: "証拠金維持率が20%を下回るとロスカット。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。", trapText: "" },
+    walnut500: { key: "walnut500", family: "walnut", label: "ウォルナット", short: "ウォルナット500倍", levText: "500倍", g: "w5", syms: ["wlnt"], balance: 300000, losscut: 0.2, futureUses: 1, zeroCut: true, bestKey: "futurefx_best_wn500",
+      lev: 500, eventLev: 200, lots: [10000, 100000, 500000, 1500000], maxUnit: 10000000,
+      fullLot: 1500000, fullTitle: "150枚の覚悟", keyText: "150枚なら、1円の値動きで±150万円", lossText: "証拠金維持率が20%を下回るとロスカット。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。",
+      trapText: "指標発表の前後10秒は、レバレッジが200倍に制限されます。必要証拠金が増えるので、持ちすぎているとロスカットされます。" },
+    walnutU: { key: "walnutU", family: "walnut", label: "ウォルナット", short: "ウォルナット無制限", levText: "無制限", g: "wu", syms: ["wlnt"], balance: 300000, losscut: 0.2, futureUses: 1, zeroCut: true, bestKey: "futurefx_best_wnu",
+      lev: Infinity, eventLev: 200, capEquity: 750000, capEquityLow: 700000, capLev: 2000, lots: [100000, 1000000, 5000000, 10000000], maxUnit: 10000000,
+      fullLot: 10000000, fullTitle: "1,000枚の狂気", keyText: "1,000枚なら、1円の値動きで±1,000万円",
+      lossText: "必要証拠金はほぼ0円で、ふだんは資産が0円になるまでロスカットされません。残高がマイナスになっても、ゼロカットで0円に戻ります（海外FX業者風）。",
+      trapText: "指標発表の前後10秒は200倍に、資産が75万円を超えると2,000倍に下がります。レバレッジが下がっている間は、証拠金維持率20%でロスカットされます。" }
   };
   let MODE = MODES.normal;
   let START_BALANCE = MODE.balance;   // 軍資金（通常100万円・ウォルナット30万円）
@@ -364,6 +375,8 @@
   let futureRemain = FUTURE_MAX_SEC;
   let futureUsesLeft = MODE.futureUses;
   let bustNotified = false;       // ウォルナットモードで資金が尽きた案内を出したか
+  let levCapped = false;          // 資産が増えてレバレッジが下がっている（無制限）
+  let lastLev = null;             // 直前のレバレッジ（変わったときに知らせる）
   let futureVisible = false;
   let chartType = "candle";
   const indOn = { ma20: true, ma50: false, bb: false, vol: true };
@@ -446,8 +459,38 @@
   }, 9000);
 
   // ======================= 取引ロジック =======================
-  function requiredMargin(k, units, price) { return (units * price) / INSTRUMENTS[k].leverage; }
-  function usedMargin() { return positions.reduce((s, p) => s + p.margin, 0); }
+  // レバレッジ：指標発表の前後（みんなに見える価格で前後10秒）や資産が増えたときは下がる。無制限は Infinity で、必要証拠金は0円
+  function baseLevOf(k) { return MODE.lev || INSTRUMENTS[k].leverage; }
+  function eventLimited(k) {
+    if (!MODE.eventLev || !INSTRUMENTS[k].events) return false;
+    const mp = currentM() - DELAY_MS, ev = eventOf(k, marketSeed, Math.floor(mp / EVENT_BLOCK));
+    return mp >= ev.m - 10000 && mp <= ev.m + 10000;
+  }
+  function levOf(k) {
+    let lev = baseLevOf(k);
+    if (levCapped) lev = Math.min(lev, MODE.capLev);
+    if (eventLimited(k)) lev = Math.min(lev, MODE.eventLev);
+    return lev;
+  }
+  const levLabel = (lev) => (lev === Infinity ? "無制限" : lev.toLocaleString("ja-JP") + "倍");
+  function requiredMargin(k, units, price) { return (units * price) / levOf(k); }
+  // レバレッジが変わるモードでは、持っている建玉の必要証拠金も今のレバレッジで計算し直す
+  function usedMargin() { return positions.reduce((s, p) => s + (MODE.lev ? (p.units * p.entry) / levOf(p.sym) : p.margin), 0); }
+  function updateLeverage() {
+    if (!MODE.lev) return;
+    if (MODE.capEquity) {
+      const eq = balance + floatingTotal();
+      if (!levCapped && eq >= MODE.capEquity) levCapped = true;
+      else if (levCapped && eq < MODE.capEquityLow) levCapped = false;
+    }
+    const lev = levOf(currentSym);
+    if (lastLev !== null && lev !== lastLev) {
+      if (lev < lastLev && lev === MODE.eventLev) toast("指標発表の前後のため、レバレッジが" + levLabel(lev) + "に制限されました（必要証拠金が増えます）", "warn");
+      else if (lev < lastLev) toast("資産が" + yenMan(MODE.capEquity) + "を超えたため、レバレッジが" + levLabel(lev) + "に下がりました", "warn");
+      else toast("レバレッジが" + levLabel(lev) + "に戻りました", "warn");
+    }
+    lastLev = lev;
+  }
   function exitPriceOf(p) { return p.dir === "buy" ? bidOf(p.sym) : askOf(p.sym); }
   function pricePnl(p, exit) { return (exit - p.entry) * p.units * (p.dir === "buy" ? 1 : -1); }
   function markPnl(p) { return pricePnl(p, exitPriceOf(p)) + p.swap; }
@@ -465,7 +508,8 @@
   function openPosition(k, dir, units, price, tp, sl, how, slip) {
     if (challengeOver) { toast("挑戦は終了しました。「もう一度挑戦」か「普通に遊ぶ」を選んでください", "err"); return false; }
     const margin = requiredMargin(k, units, price);
-    if (margin > freeMargin()) { toast("証拠金が不足しているため約定できませんでした", "err"); return false; }
+    const free = freeMargin();
+    if (margin > free || free <= 0) { toast("証拠金が不足しているため約定できませんでした", "err"); return false; }
     positions.push({ id: seq++, sym: k, dir, units, entry: price, margin, tp: tp ?? null, sl: sl ?? null, swap: 0, futureOn: futureVisible, om: currentM() });
     stats.maxHeld = Math.max(stats.maxHeld, positions.reduce((s, p) => s + (p.sym === k ? p.units : 0), 0));
     let msg = `${how} ${dirJ(dir)} ${INSTRUMENTS[k].code} ${fmtQty(k, units)} を ${fmtP(k, price)} で約定`;
@@ -579,9 +623,10 @@
 
   // ウォルナットモードで建玉も注文もなく、1枚も買えないほど資金が減ったら「退場」。ラウンド中ならその場で終了する
   function checkBust() {
-    if (MODE.key !== "walnut" || positions.length || orders.length) return;
-    const k = "wlnt";
-    if (freeMargin() >= requiredMargin(k, INSTRUMENTS[k].minUnit, askOf(k))) return;
+    if (MODE.family !== "walnut" || positions.length || orders.length) return;
+    const k = "wlnt", free = freeMargin();
+    // 指標発表の前後の一時的な制限では退場にしないよう、本来のレバレッジで1枚買えるかを見る
+    if (free > 0 && free >= (INSTRUMENTS[k].minUnit * askOf(k)) / baseLevOf(k)) return;
     if (challenge && !challengeOver) {
       endChallenge(); sfx("end");
       toast("資金が尽きたため、ラウンドを終了しました（退場）", "err");
@@ -591,19 +636,21 @@
     }
   }
   function checkLosscut() {
-    const um = usedMargin();
-    if (um <= 0) return;
-    if ((balance + floatingTotal()) / um < MODE.losscut) {
+    if (!positions.length) return;
+    // 必要証拠金が0円（レバレッジ無制限の間）は、資産が0円になったときにロスカット
+    const um = usedMargin(), eq = balance + floatingTotal();
+    if (um > 0 ? eq / um < MODE.losscut : eq <= 0) {
       // 直前（みんなに見えている価格で10秒以内）に急変があれば「ヒゲで刈られた」扱い
       const cut = Date.now() - DELAY_MS;
       if (positions.some(p => { const ft = engines[p.sym].flashT; return ft !== undefined && ft <= cut && ft > cut - 10000; })) stats.wicked = true;
       positions.slice().forEach(p => closeAt(p, exitPriceOf(p), "ロスカット"));
       renderPositions();
       const pct = Math.round(MODE.losscut * 100) + "%";
-      pushNews(stats.wicked && MODE.key === "walnut"
-        ? "【ロスカット】WLNTの急変で証拠金維持率が" + pct + "を割り込み、全建玉が強制決済されました。くるみは割れるものです。"
-        : "【ロスカット】証拠金維持率が" + pct + "を割り込み、全建玉が強制決済されました。未来は見えていたはずですが…");
-      toast("証拠金維持率が" + pct + "を下回ったため、ロスカットされました", "err");
+      const why = um > 0 ? "証拠金維持率が" + pct + "を割り込み" : "資産が0円を割り込み";
+      pushNews(stats.wicked && MODE.family === "walnut"
+        ? "【ロスカット】WLNTの急変で" + why + "、全建玉が強制決済されました。くるみは割れるものです。"
+        : "【ロスカット】" + why + "、全建玉が強制決済されました。未来は見えていたはずですが…");
+      toast((um > 0 ? "証拠金維持率が" + pct + "を下回った" : "資産が0円を下回った") + "ため、ロスカットされました", "err");
     }
   }
 
@@ -709,10 +756,12 @@
     if (which === "tp") tpInput.value = fmtIn(k, roundTo(ref + s * c.tpOffset, c.tick));
     if (which === "sl") slInput.value = fmtIn(k, roundTo(ref - s * c.slOffset, c.tick));
   }
+  const lotsOf = (k) => (k === "wlnt" && MODE.lots) || INSTRUMENTS[k].lots;
+  const maxUnitOf = (k, md) => md.maxUnit || INSTRUMENTS[k].maxUnit;
   function renderLots() {
     const k = currentSym, row = $("lotRow");
     row.innerHTML = "";
-    INSTRUMENTS[k].lots.forEach(u => {
+    lotsOf(k).forEach(u => {
       const b = document.createElement("button");
       b.className = "lot-btn" + (u === order.qty[k] ? " active" : "");
       b.textContent = fmtQty(k, u);
@@ -777,6 +826,7 @@
     $("marginLabel").textContent = fmtYen(m);
     const free = freeMargin();
     $("freeMarginLabel").textContent = fmtYen(free);
+    $("leverageLabel").textContent = levLabel(levOf(k));
     const s = order.dir === "buy" ? 1 : -1;
     const parts = [];
     const tp = parseFloat(tpInput.value), sl = parseFloat(slInput.value);
@@ -791,8 +841,9 @@
 
   function validQty(k, u) {
     const c = INSTRUMENTS[k];
-    if (!isFinite(u) || u < c.minUnit || u > c.maxUnit || u % c.minUnit !== 0) {
-      toast("数量は" + fmtQty(k, c.minUnit) + "単位（最大" + fmtQty(k, c.maxUnit) + "）で入力してください", "err");
+    const max = maxUnitOf(k, MODE);
+    if (!isFinite(u) || u < c.minUnit || u > max || u % c.minUnit !== 0) {
+      toast("数量は" + fmtQty(k, c.minUnit) + "単位（最大" + fmtQty(k, max) + "）で入力してください", "err");
       return false;
     }
     return true;
@@ -827,7 +878,7 @@
     roundTrades.length = 0;
     balance = START_BALANCE; realized = 0; positions = []; orders = [];
     Object.assign(stats, { trades: 0, wins: 0, futureTrades: 0, maxWin: 0, maxLoss: 0, wicked: false, maxHeld: 0 });
-    bustNotified = false;
+    bustNotified = false; levCapped = false; lastLev = null;
     resetHistory(); renderPositions(); updateOrderPanel();
   }
   // 中断・リセットなど取り消せない操作は、3秒以内にもう一度押したときだけ実行する（誤操作防止）
@@ -905,10 +956,10 @@
     $(m).addEventListener("click", () => { moreMenu.classList.remove("open"); $(t).click(); }));
 
   // 銘柄メニュー：モードごとに見出しを付けて並べる。別のモードの銘柄を選ぶと、モード切り替えの確認を出す
-  Object.values(MODES).forEach(md => {
+  [MODES.normal, MODES.walnut].forEach(md => {
     const h = document.createElement("div");
-    h.className = "dd-head" + (md.key === "walnut" ? " wn" : "");
-    h.textContent = md.key === "walnut" ? "ウォルナットモード（軍資金30万円・100倍）" : "通常モード（軍資金100万円）";
+    h.className = "dd-head" + (md.family === "walnut" ? " wn" : "");
+    h.textContent = md.family === "walnut" ? "ウォルナットモード（軍資金30万円・100倍／500倍／無制限）" : "通常モード（軍資金100万円）";
     symMenu.appendChild(h);
     md.syms.forEach(k => {
       const c = INSTRUMENTS[k];
@@ -917,9 +968,9 @@
       b.innerHTML = '<span class="mono">' + c.code + "</span> " + c.name + '<span class="sub">' + (k === "wlnt" ? "FX・激荒" : c.kind === "fx" ? "FX" : "株・荒い") + "</span>";
       b.addEventListener("click", () => {
         symMenu.classList.remove("open");
-        if (md === MODE) { switchSymbol(k); return; }
-        if (challenge) { toast("タイムアタック・挑戦状の途中はモードを切り替えられません", "err"); return; }
-        openModeModal(md.key);
+        if (md.family === "normal" && MODE.family === "normal") { switchSymbol(k); return; }
+        if (challenge) { if (MODE.family !== md.family) toast("タイムアタック・挑戦状の途中はモードを切り替えられません", "err"); return; }
+        openModeModal(md.family === "walnut" && MODE.family === "walnut" ? MODE.key : md.key);   // ウォルナット中に選ぶとレバレッジを変えられる
       });
       symMenu.appendChild(b);
     });
@@ -1028,7 +1079,7 @@
     const c = INSTRUMENTS[k];
     $("symBtnLabel").textContent = c.code;
     $("orderTitle").textContent = "新規注文 · " + c.name;
-    $("leverageLabel").textContent = c.leverage + "倍";
+    $("leverageLabel").textContent = levLabel(levOf(k));
     $("qtyUnit").textContent = c.unit;
     qtyInput.step = qtyDisp(k, c.minUnit);
     qtyInput.value = qtyDisp(k, order.qty[k]);
@@ -1053,16 +1104,32 @@
     SYM_KEYS = MODE.syms;
     START_BALANCE = MODE.balance;
     loadBest();
-    document.body.classList.toggle("walnut", MODE.key === "walnut");
+    document.body.classList.toggle("walnut", MODE.family === "walnut");
+    if (MODE.family === "walnut") order.qty.wlnt = lotsOf("wlnt")[0];   // レバレッジごとに数量のボタンが違うので、最小の数量に戻す
+    levCapped = false; lastLev = null;
     if (!SYM_KEYS.includes(currentSym)) currentSym = SYM_KEYS[0];
   }
   let pendingMode = null;
   function openModeModal(key) {
     pendingMode = key;
-    $("modeWalnutBody").hidden = key !== "walnut";
-    $("modeNormalBody").hidden = key === "walnut";
+    const wn = MODES[key].family === "walnut";
+    $("modeWalnutBody").hidden = !wn;
+    $("modeNormalBody").hidden = wn;
+    if (wn) renderModeModal(key);
     $("modeModal").hidden = false;
   }
+  function renderModeModal(key) {
+    const md = MODES[key];
+    pendingMode = key;
+    $("modeLevSeg").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.m === key));
+    $("modeLevHead").textContent = "レバレッジ" + md.levText + "の一発勝負";
+    $("modeLevVal").textContent = md.levText;
+    $("modeKey").textContent = md.keyText;
+    $("modeLossLi").textContent = md.lossText;
+    $("modeTrapLi").textContent = md.trapText;
+    $("modeTrapLi").hidden = !md.trapText;
+  }
+  $("modeLevSeg").querySelectorAll("button").forEach(b => b.addEventListener("click", () => renderModeModal(b.dataset.m)));
   // フリープレイのままモードを切り替える（新しい相場・資産リセット）
   function switchMode(key) {
     setMode(key);
@@ -1073,9 +1140,9 @@
     view.offset = 0;
     switchSymbol(SYM_KEYS[0]);
     renderPositions();
-    toast(MODE.key === "walnut" ? "ウォルナットモード開始！軍資金30万円・レバレッジ100倍です" : "通常モードに戻りました（軍資金100万円）", "warn");
+    toast(MODE.family === "walnut" ? "ウォルナットモード開始！軍資金30万円・レバレッジ" + MODE.levText + "です" : "通常モードに戻りました（軍資金100万円）", "warn");
   }
-  $("modeStart").addEventListener("click", () => { $("modeModal").hidden = true; if (pendingMode && !challenge) switchMode(pendingMode); });
+  $("modeStart").addEventListener("click", () => { $("modeModal").hidden = true; if (pendingMode && pendingMode !== MODE.key && !challenge) switchMode(pendingMode); });
   $("modeCancel").addEventListener("click", () => { $("modeModal").hidden = true; });
 
   // ======================= 描画ツール =======================
@@ -1647,10 +1714,10 @@
   }
   // ウォルナットモードの称号（くるみ＝walnut にちなんだものを優先）
   function rankFor(equity, ret, trades) {
-    if (MODE.key === "walnut") {
+    if (MODE.family === "walnut") {
       if (stats.wicked) return "割られたくるみ";
-      if (trades > 0 && equity < requiredMargin("wlnt", INSTRUMENTS.wlnt.minUnit, INSTRUMENTS.wlnt.start)) return "退場";
-      if (stats.maxHeld >= 300000 && ret > 0) return "30枚の覚悟";
+      if (trades > 0 && (equity <= 0 || equity < (INSTRUMENTS.wlnt.minUnit * INSTRUMENTS.wlnt.start) / baseLevOf("wlnt"))) return "退場";
+      if (stats.maxHeld >= MODE.fullLot && ret > 0) return MODE.fullTitle;
     }
     return rankOf(ret, trades);
   }
@@ -1664,7 +1731,7 @@
     return { mode: "free", game: MODE.key, nickname, equity, ret, trades: stats.trades, winRate, futureRate, rank: rankFor(equity, ret, stats.trades + positions.length) };
   }
   function modeLabel(card) {
-    const pre = card.game === "walnut" ? "ウォルナット・" : "";
+    const pre = MODES[card.game] && MODES[card.game].short ? MODES[card.game].short + "・" : "";
     if (card.mode === "ta") return pre + "5分タイムアタック";
     if (card.mode === "chal") return pre + "vs " + challenge.n + "（挑戦状）";
     return pre + "フリープレイ";
@@ -1692,7 +1759,7 @@
     let head = (nickname || "名無しの未来人") + "の成績（" + modeLabel(card) + "）";
     let line1;
     if (card.mode === "free" && card.trades === 0 && !positions.length) line1 = "30秒先の未来が見えるのに、1回も取引しませんでした。";
-    else if (card.game === "walnut") line1 = "レバレッジ100倍・未来視点は1回だけのウォルナットモードで、30万円 → " + fmtYen(card.equity) + "（" + (diff >= 0 ? "+" : "") + card.ret.toFixed(2) + "%）";
+    else if (MODES[card.game] && MODES[card.game].family === "walnut") line1 = "レバレッジ" + MODES[card.game].levText + "・未来視点は1回だけのウォルナットモードで、30万円 → " + fmtYen(card.equity) + "（" + (diff >= 0 ? "+" : "") + card.ret.toFixed(2) + "%）";
     else if (diff >= 0) line1 = "30秒先の未来が見えるトレードで、100万円 → " + fmtYen(card.equity) + "（+" + card.ret.toFixed(2) + "%）";
     else line1 = "30秒先の未来が見えていたのに、100万円 → " + fmtYen(card.equity) + "（" + card.ret.toFixed(2) + "%）";
     if (card.mode === "chal") {
@@ -1892,7 +1959,7 @@
     for (let i = 0; i < trades.length; i++) {
       const t = trades[i], c = INSTRUMENTS[t.k], no = "取引" + (i + 1) + "件目";
       if (t.em < 0 || t.xm < t.em || t.xm > TA_MS + 2000) return { ok: false, msg: no + "の時刻が5分間の範囲外です" };
-      if (t.u < c.minUnit || t.u > c.maxUnit || t.u % c.minUnit !== 0) return { ok: false, msg: no + "の数量が不正です" };
+      if (t.u < c.minUnit || t.u > maxUnitOf(t.k, md) || t.u % c.minUnit !== 0) return { ok: false, msg: no + "の数量が不正です" };
       // 許容差＝スプレッドが最大まで広がったときの半分＋スリッページの最大＋余裕（通常の銘柄はスプレッド×4.5）
       const cap = c.spreadCap || 5, tol = c.spread * (cap / 2 + (cap - 1) * 0.4 + 0.4) + c.tick;
       if (near(t.k, t.em, t.ep) > tol) return { ok: false, msg: no + "の建値が、その時点の相場と一致しません" };
@@ -1994,7 +2061,7 @@
     $("rankModal").hidden = false;
     $("rankTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.p === rankPeriod));
     $("rankModeTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.g === rankGame));
-    $("rankTitle").textContent = rankGame === "walnut" ? "🏆 ウォルナット 5分タイムアタック ランキング" : "🏆 5分タイムアタック ランキング";
+    $("rankTitle").textContent = "🏆 " + (MODES[rankGame].short ? MODES[rankGame].short + " " : "") + "5分タイムアタック ランキング";
     $("rankBody").innerHTML = '<tr><td class="empty-row" colspan="6">読み込み中…</td></tr>';
     try {
       const api = await waitRankingReady();
@@ -2063,8 +2130,9 @@
       const o = JSON.parse(b64urlDecode(m[1]));
       // v3＝通常モード（従来の形式）、v6＝ウォルナットモード（g: "w"）。古いページが通常モードと取り違えないよう版を分ける
       // （v4・v5 は値動きを見直す前のウォルナット。相場が再現できないので受け付けない）
-      const game = o && o.v === 6 && o.g === "w" ? "walnut" : "normal";
-      const ok = o && (o.v === 3 || (o.v === 6 && o.g === "w")) &&
+      const wmd = o && o.v === 6 ? Object.values(MODES).find(md => md.g && md.g === o.g) : null;   // g：w＝100倍、w5＝500倍、wu＝無制限
+      const game = wmd ? wmd.key : "normal";
+      const ok = o && (o.v === 3 || wmd) &&
         Number.isInteger(o.s) && o.s >= 0 && o.s <= 4294967295 &&
         Number.isFinite(o.a) && Number.isFinite(o.b) &&
         o.a >= 0 && o.a <= 24 * 3600 * 1000 && Math.abs((o.b - o.a) - TA_MS) < TICK_MS;   // 5分勝負のみ受け付ける
@@ -2091,7 +2159,7 @@
   }
   function buildChallengeUrl(equity) {
     const range = challenge ? { a: challenge.a, b: challenge.b } : { a: roundStartM, b: currentM() };
-    const payload = MODE.key === "walnut" ? { v: 6, g: "w", s: marketSeed } : { v: 3, s: marketSeed };
+    const payload = MODE.g ? { v: 6, g: MODE.g, s: marketSeed } : { v: 3, s: marketSeed };
     Object.assign(payload, { a: Math.round(range.a), b: Math.round(range.b), n: nickname || "", e: Math.round(equity), t: stats.trades });
     return shareBaseUrl() + "#c=" + b64urlEncode(JSON.stringify(payload));
   }
@@ -2116,7 +2184,8 @@
     const base = MODES[ch.game].balance, diff = ch.e - base;
     const ret = $("chalRet");
     ret.textContent = fmtSYen(diff) + "（" + (diff >= 0 ? "+" : "") + ((diff / base) * 100).toFixed(2) + "%）";
-    $("chalMode").hidden = ch.game !== "walnut";
+    $("chalMode").hidden = MODES[ch.game].family !== "walnut";
+    $("chalMode").textContent = "ウォルナットモード（軍資金30万円・レバレッジ" + (MODES[ch.game].levText || "") + "・未来視点1回）";
     ret.className = "mono " + (diff >= 0 ? "pos" : "neg");
     $("chalDur").textContent = fmtDurJ(ch.b - ch.a);
     $("chalModal").hidden = false;
@@ -2143,7 +2212,7 @@
   // 新しいランダム相場で5分タイムアタックを始める
   function startTimeAttack() {
     startChallenge({ mode: "ta", game: MODE.key, s: randomSeed(), a: 0, b: TA_MS, n: null, e: null, t: 0 });
-    toast(MODE.key === "walnut" ? "ウォルナット 5分タイムアタック開始！" : "5分タイムアタック開始！", "warn");
+    toast(MODE.family === "walnut" ? MODE.short + " 5分タイムアタック開始！" : "5分タイムアタック開始！", "warn");
   }
   function exitChallenge() {
     challenge = null;
@@ -2210,7 +2279,7 @@
       tr.className = "mono " + (diffTA >= 0 ? "pos" : "neg");
       $("taSub").textContent = "決済" + r.trades + "回・勝率" + (r.trades ? r.winRate + "%" : "-") + "・称号「" + r.rank + "」";
       $("chalResultMsg").textContent = r.rank === "割られたくるみ" ? "急変のヒゲでロスカットされました。未来が見えない時間に大きく張ると、くるみは簡単に割れます。"
-        : r.rank === "退場" ? "資金が尽きて退場となりました。レバレッジ100倍では、1円の逆行が命取りです。"
+        : r.rank === "退場" ? "資金が尽きて退場となりました。レバレッジ" + MODE.levText + "では、わずかな逆行が命取りです。"
         : diffTA > 0 ? "未来を味方につけられたようです。ランキングに登録して、挑戦状で友達にも勝負を挑んでみましょう。"
         : "未来が見えていても、勝つのは簡単ではないようです。同じ相場の挑戦状を送って、友達ならどうなるか試してみましょう。";
       $("chalResultModal").hidden = false;
@@ -2252,13 +2321,13 @@
   // ======================= タイムアタック開始 =======================
   $("taBtn").addEventListener("click", () => {
     if (challenge) return;
-    const wn = MODE.key === "walnut";
-    $("taBadge").textContent = wn ? "⏱ ウォルナット 5分タイムアタック" : "⏱ 5分タイムアタック";
-    $("taLi1").textContent = wn ? "軍資金30万円・レバレッジ100倍で、5分後の最終資産で勝負します。時間になると自動で全決済されます。"
+    const wn = MODE.family === "walnut";
+    $("taBadge").textContent = wn ? "⏱ " + MODE.short + " 5分タイムアタック" : "⏱ 5分タイムアタック";
+    $("taLi1").textContent = wn ? "軍資金30万円・レバレッジ" + MODE.levText + "で、5分後の最終資産で勝負します。時間になると自動で全決済されます。"
       : "軍資金100万円から、5分後の最終資産で勝負します。時間になると自動で全決済されます。";
-    $("taLi2").textContent = wn ? "未来視点（30秒）は1回だけ。5分の間に1回、指標発表があります（時刻はチャートの上に表示）。証拠金維持率20%でロスカット、残高がマイナスになってもゼロカットで0円に戻ります。"
+    $("taLi2").textContent = wn ? "未来視点（30秒）は1回だけ。5分の間に1回、指標発表があります（時刻はチャートの上に表示）。" + MODE.lossText + MODE.trapText
       : "未来視点（30秒・クールダウン60秒）は、5分間で最大4回使えます。";
-    $("taLi3").textContent = wn ? "終了後、成績をウォルナット専用のランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。"
+    $("taLi3").textContent = wn ? "終了後、成績を" + MODE.short + "専用のランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。"
       : "終了後、成績をランキングに登録したり、同じ相場の挑戦状URLを作ったりできます。";
     $("taModal").hidden = false;
   });
@@ -2273,7 +2342,7 @@
     positions.slice().forEach(p => closeManual(p)); renderPositions();
   });
   $("mQty").addEventListener("click", () => {
-    const lots = INSTRUMENTS[currentSym].lots, cur = order.qty[currentSym];
+    const lots = lotsOf(currentSym), cur = order.qty[currentSym];
     const next = lots[(lots.indexOf(cur) + 1) % lots.length] || lots[0];
     order.qty[currentSym] = next; qtyInput.value = qtyDisp(currentSym, next); renderLots(); updateOrderPanel(); updateMobileBar();   // 表示はすぐ切り替える
   });
@@ -2303,7 +2372,7 @@
     el.title = ev.name + "（発表の前後はスプレッドが大きく広がります）";
     if (remain > 0 && remain <= 10000 && evToastFor !== ev.m) {
       evToastFor = ev.m;
-      toast("まもなく" + ev.name + "の発表です。発表の前後はスプレッドが大きく広がります", "warn");
+      toast("まもなく" + ev.name + "の発表です。発表の前後はスプレッドが大きく広がります" + (MODE.eventLev ? "（レバレッジも" + levLabel(MODE.eventLev) + "に制限）" : ""), "warn");
     }
   }
 
@@ -2342,6 +2411,7 @@
     updatePub(now, false);
     while (newsQueue.length && newsQueue[0].at <= now) pushNews(newsQueue.shift().text);
     accrueCarry(dt);
+    updateLeverage();
     processTriggers();
     checkLosscut();
     checkBust();

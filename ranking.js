@@ -22,7 +22,9 @@ const EQUITY_CAP = 10000000;       // 資産の上限：1,000万円＝軍資金�
 // モードごとの設定（ルール側と同じ値）。コレクション名の頭：通常 ta5、ウォルナット wn5
 const GAMES = {
   normal: { prefix: "ta5", cap: EQUITY_CAP },
-  walnut: { prefix: "wn5", cap: 3000000 }    // 軍資金30万円の10倍
+  walnut: { prefix: "wn5", cap: 3000000 },        // レバレッジ100倍：軍資金30万円の10倍
+  walnut500: { prefix: "wf5", cap: 30000000 },    // レバレッジ500倍：軍資金の100倍
+  walnutU: { prefix: "wu5", cap: 100000000 }      // レバレッジ無制限：1億円
 };
 // 期間別のランキング。コレクション名は日本時間の日付・週から作る（ルール側でも同じ計算で検査）
 const JST = 9 * 3600 * 1000;
@@ -62,14 +64,14 @@ const num = (v, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) 
 // 戻り値: [{ period, status: "created" | "updated" | "notBest" | "error", best }]
 async function submitBest(data) {
   const user = await ensureUser();
-  const game = data.game === "walnut" ? "walnut" : "normal";
+  const game = Object.prototype.hasOwnProperty.call(GAMES, data.game) ? data.game : "normal";
   const cap = GAMES[game].cap;
   const equity = Math.round(num(data.equity, 0, 1e12));
   if (equity > cap) return { tooHigh: true, cap, results: [] };
   const record = {
     nickname: String(data.nickname || "").slice(0, 20) || "名無しの未来人",
     equity,
-    ret: Math.round(num(data.ret, -100, 1000) * 100) / 100,
+    ret: Math.round(num(data.ret, -100, 1e6) * 100) / 100,
     trades: Math.round(num(data.trades, 0, 10000)),
     winRate: Math.round(num(data.winRate, 0, 100)),
     futureRate: Math.round(num(data.futureRate, 0, 100)),

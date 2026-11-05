@@ -180,6 +180,28 @@ test("ウォルナット：軍資金30万円での損益率チェック・上限
   await assertFails(setDoc(doc(guest(), "wn5", "alice"), record(654321, {}, 300000)));
 });
 
+test("ウォルナット500倍・無制限：専用コレクション（wf5・wu5）と上限", async () => {
+  const now = Date.now();
+  await awayFromBoundary();
+  for (const [game, cap] of [["walnut500", 30000000], ["walnutU", 100000000]]) {
+    assert.equal(GAMES[game].cap, cap);
+    for (const period of ["day", "week", "all"]) {
+      await assertSucceeds(setDoc(doc(alice(), colAt(period, Date.now(), game), "alice"), record(cap, {}, 300000)), `${game} ${period}`);
+    }
+    const col = GAMES[game].prefix;
+    await env.clearFirestore();
+    await assertSucceeds(setDoc(doc(alice(), col, "alice"), record(0, {}, 300000)));   // ゼロカットの0円
+    await env.clearFirestore();
+    await assertFails(setDoc(doc(alice(), col, "alice"), record(cap + 1, {}, 300000)));
+    await assertFails(setDoc(doc(alice(), col, "alice"), record(654321)));   // 100万円基準の損益率では登録できない
+    await assertSucceeds(getDocs(query(collection(guest(), col), orderBy("equity", "desc"), limit(20))));
+    await assertFails(setDoc(doc(guest(), col, "alice"), record(654321, {}, 300000)));
+  }
+  // 100倍の上限を超える金額は 100倍のランキング（wn5）には登録できない
+  await assertFails(setDoc(doc(alice(), "wn5", "alice"), record(30000000, {}, 300000)));
+  assert.ok(now);
+});
+
 test("削除はできない", async () => {
   await seed("ta5/alice", Object.assign(record(1100000), { ts: Timestamp.fromMillis(Date.now() - 120000) }));
   await assertFails(deleteDoc(doc(alice(), "ta5/alice")));
